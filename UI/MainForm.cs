@@ -653,34 +653,49 @@ public sealed class MainForm : Form
 
         string headerVerb = mode == ScanMode.FlaggedOnly ? "Rescanning flagged" : "Scanning";
         _outputBox.Clear();
-        AppendOutput(
-            $"{headerVerb} {files.Count} table(s) with {enabledIds.Count} rule(s) enabled..." +
-            $"{Environment.NewLine}{Environment.NewLine}");
+
+        bool runDeepAnalysis = enabledIds.Count > 0;
+        if (runDeepAnalysis)
+        {
+            AppendOutput(
+                $"{headerVerb} {files.Count} table(s) with {enabledIds.Count} rule(s) enabled..." +
+                $"{Environment.NewLine}{Environment.NewLine}");
+        }
+        else
+        {
+            AppendOutput(
+                $"No deep-analysis rules selected; skipping per-table scan." +
+                $"{Environment.NewLine}{Environment.NewLine}");
+        }
 
         var results = new List<TableResult>(files.Count);
         var sb = new StringBuilder();
 
         try
         {
-            await Task.Run(() =>
+            // Per-table deep analysis only runs when deep-analysis rules are selected.
+            if (runDeepAnalysis)
             {
-                service.ScanFiles(files, onResult: (result, done, total) =>
+                await Task.Run(() =>
                 {
-                    results.Add(result);
-                    string detail = ReportFormatter.FormatTableDetail(result) + Environment.NewLine;
-
-                    // Marshal UI updates back to the UI thread.
-                    BeginInvoke(() =>
+                    service.ScanFiles(files, onResult: (result, done, total) =>
                     {
-                        AppendOutput(detail);
-                        _progressBar.Value = Math.Min(done, _progressBar.Maximum);
-                        _statusLabel.Text = $"{headerVerb}: {done}/{total}  ({result.TableName})";
-                    });
-                }, _cts.Token);
-            }, _cts.Token);
+                        results.Add(result);
+                        string detail = ReportFormatter.FormatTableDetail(result) + Environment.NewLine;
 
-            // Append the summary and remember results for future rescans.
-            sb.Append(ReportFormatter.FormatSummary(results));
+                        // Marshal UI updates back to the UI thread.
+                        BeginInvoke(() =>
+                        {
+                            AppendOutput(detail);
+                            _progressBar.Value = Math.Min(done, _progressBar.Maximum);
+                            _statusLabel.Text = $"{headerVerb}: {done}/{total}  ({result.TableName})";
+                        });
+                    }, _cts.Token);
+                }, _cts.Token);
+
+                // Append the summary and remember results for future rescans.
+                sb.Append(ReportFormatter.FormatSummary(results));
+            }
 
             // Configuration (collection-scope) checks - full folder scans only.
             if (mode == ScanMode.Full)
@@ -701,8 +716,16 @@ public sealed class MainForm : Form
 
             AppendOutput(Environment.NewLine + sb);
 
-            MergeResults(mode, results);
-            _statusLabel.Text = BuildStatusSummary();
+            // Only update retained results when a per-table scan actually ran.
+            if (runDeepAnalysis)
+            {
+                MergeResults(mode, results);
+                _statusLabel.Text = BuildStatusSummary();
+            }
+            else
+            {
+                _statusLabel.Text = "Configuration checks complete.";
+            }
         }
         catch (OperationCanceledException)
         {

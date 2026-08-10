@@ -10,6 +10,11 @@
         "emulatorIds": [],
         "matchEmulatorsByFolder": true,
         "visibleOnly": false
+      },
+      "vr-room-matching": {
+        "enabled": true,
+        "respectExcludePatterns": false,
+        "prefix": "VR ROOM "
       }
     }
   },

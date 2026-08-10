@@ -1,5 +1,6 @@
 using VPX_Inspector.Vpx.Pinup;
 using VPX_Inspector.Vpx.Rules;
+using VPX_Inspector.Vpx.VrRoom;
 
 namespace VPX_Inspector.Vpx.Checks;
 
@@ -20,6 +21,7 @@ public static class ConfigurationCheckRunner
         return new IConfigurationCheck[]
         {
             new PinupGameMatchCheck(config.PinupGameMatch),
+            new VrRoomMatchCheck(config.VrRoomMatching),
             // Future configuration checks are added here.
         };
     }

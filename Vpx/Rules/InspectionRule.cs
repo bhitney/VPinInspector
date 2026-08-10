@@ -51,6 +51,10 @@ public sealed class ConfigurationChecksSettings
     /// <summary>Settings for the PinUP Popper game-match check.</summary>
     [JsonPropertyName("pinup-game-match")]
     public PinupMatchSettings PinupGameMatch { get; init; } = new();
+
+    /// <summary>Settings for the VR ROOM matching check.</summary>
+    [JsonPropertyName("vr-room-matching")]
+    public VrRoomMatchSettings VrRoomMatching { get; init; } = new();
 }
 
 /// <summary>
@@ -103,6 +107,20 @@ public sealed class PinupMatchSettings : ConfigurationCheckSettings
     /// </summary>
     [JsonPropertyName("visibleOnly")]
     public bool VisibleOnly { get; init; }
+}
+
+/// <summary>
+/// Settings for the VR ROOM matching check: every "VR ROOM &lt;name&gt;.vpx" should
+/// have a matching non-VR "&lt;name&gt;.vpx" in the same folder.
+/// </summary>
+public sealed class VrRoomMatchSettings : ConfigurationCheckSettings
+{
+    /// <summary>
+    /// The filename prefix that denotes a VR ROOM variant. Defaults to "VR ROOM ".
+    /// Matched case-insensitively.
+    /// </summary>
+    [JsonPropertyName("prefix")]
+    public string Prefix { get; init; } = "VR ROOM ";
 }
 
 /// <summary>

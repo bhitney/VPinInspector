@@ -58,15 +58,26 @@ static int RunConsole(string[] args)
     }
     Console.WriteLine();
 
-    IReadOnlyList<TableResult> results = service.ScanFiles(
-        vpxFiles,
-        onResult: (result, _, _) =>
-        {
-            Console.Write(ReportFormatter.FormatTableDetail(result));
-            Console.WriteLine();
-        });
+    // Skip the per-table scan entirely when no deep-analysis rules are enabled.
+    bool anyRuleEnabled = engine.Rules.Any(r => r.Enabled);
+    IReadOnlyList<TableResult> results;
+    if (anyRuleEnabled)
+    {
+        results = service.ScanFiles(
+            vpxFiles,
+            onResult: (result, _, _) =>
+            {
+                Console.Write(ReportFormatter.FormatTableDetail(result));
+                Console.WriteLine();
+            });
 
-    Console.WriteLine(ReportFormatter.FormatSummary(results));
+        Console.WriteLine(ReportFormatter.FormatSummary(results));
+    }
+    else
+    {
+        results = Array.Empty<TableResult>();
+        Console.WriteLine("No deep-analysis rules enabled; skipping per-table scan.");
+    }
 
     // Configuration (collection-scope) checks, e.g. PinUP game match.
     var checkContext = new VPX_Inspector.Vpx.Checks.ConfigurationCheckContext

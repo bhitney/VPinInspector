@@ -248,6 +248,19 @@ Compares `.vpx` files in the folder against games in the PinUP Popper database.
 Reports **[ERROR]** for games in the DB but missing on disk, and **[INFO]** for
 files on disk not in the DB.
 
+### `vr-room-matching`
+
+Checks that every `VR ROOM <name>.vpx` file has a matching non-VR `<name>.vpx` in
+the same folder. By convention a VR ROOM file is the VR variant of an existing
+table; a VR ROOM without its base table usually means the table is VR-only, which
+is unusual.
+
+| Field | Meaning |
+|---|---|
+| `prefix` | The VR ROOM filename prefix. Defaults to `"VR ROOM "`. |
+
+Reports **[WARN]** for each VR ROOM file with no matching base table.
+
 ### Adding a configuration check (code task)
 
 1. Create a settings class extending `ConfigurationCheckSettings` (add its own
