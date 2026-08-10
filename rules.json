@@ -1,0 +1,28 @@
+{
+  "settings": {
+    "maxRunTimeSeconds": 0,
+    "excludePatterns": [ "VR ROOM*" ]
+  },
+  "rules": [
+    {
+      "id": "ball-shadow",
+      "description": "Ball shadow update timer is misconfigured",
+      "enabled": true,
+      "namePatterns": [ "BallShadowUpdate", "ShadowUpdateTimer", "ShadowTimer", "BallShadow", "*shadow*" ],
+      "types": [ "Timer" ],
+      "mustBeTimer": true,
+      "interval": ">=10",
+      "suggest": -1
+    },
+    {
+      "id": "slingshot",
+      "description": "Slingshot timer interval",
+      "enabled": true,
+      "namePatterns": [ "*sling*" ],
+      "types": [ "Surface" ],
+      "mustBeTimer": true,
+      "interval": ">40",
+      "suggest": 40
+    }
+  ]
+}
