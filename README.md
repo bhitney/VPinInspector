@@ -41,6 +41,11 @@ VPX Inspector <path-to-vpx-file-or-folder> [rules.json]
 
 ## rules.json
 
+See **[docs/authoring-rules.md](docs/authoring-rules.md)** for a complete,
+AI-friendly guide to writing rules (schema reference, matching semantics, element
+type names, and copy-paste recipes). Paste that doc into an assistant and describe
+the check you want to generate a correct rule entry quickly.
+
 ```json
 {
   "settings": {
