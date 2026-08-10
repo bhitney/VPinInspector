@@ -1,4 +1,5 @@
 using System.Text;
+using VPX_Inspector.Vpx.Checks;
 using VPX_Inspector.Vpx.Rules;
 
 namespace VPX_Inspector.Vpx;
@@ -170,6 +171,64 @@ public static class ReportFormatter
                     .Select(r => r.TableName)
                     .OrderBy(n => n, StringComparer.OrdinalIgnoreCase);
                 sb.AppendLine($"{group.Key}: {string.Join(", ", tables)}");
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Formats a configuration check result generically: a titled block with
+    /// summary lines and severity-tagged sections. Silent when the check was
+    /// skipped because it was disabled.
+    /// </summary>
+    public static string FormatConfigurationCheck(ConfigurationCheckResult result)
+    {
+        var sb = new StringBuilder();
+
+        if (!result.Ran)
+        {
+            if (!string.IsNullOrEmpty(result.Skipped))
+            {
+                sb.AppendLine();
+                sb.AppendLine($"{result.Title} skipped: {result.Skipped}");
+            }
+
+            return sb.ToString();
+        }
+
+        sb.AppendLine();
+        sb.AppendLine(new string('#', 90));
+        sb.AppendLine(result.Title);
+        sb.AppendLine(new string('#', 90));
+        sb.AppendLine();
+
+        foreach (string line in result.SummaryLines)
+        {
+            sb.AppendLine(line);
+        }
+
+        foreach (CheckSection section in result.Sections)
+        {
+            sb.AppendLine();
+            string tag = section.Severity switch
+            {
+                CheckSeverity.Error => "[ERROR]",
+                CheckSeverity.Warning => "[WARN]",
+                _ => "[INFO]",
+            };
+            sb.AppendLine($"{tag} {section.Title} ({section.Lines.Count}):");
+
+            if (section.Lines.Count == 0)
+            {
+                sb.AppendLine("    (none)");
+            }
+            else
+            {
+                foreach (string line in section.Lines)
+                {
+                    sb.AppendLine($"    {line}");
+                }
             }
         }
 

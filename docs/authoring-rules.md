@@ -37,23 +37,52 @@ Add that object to the `rules` array in [`rules.json`](../rules.json).
 
 ---
 
+## Two families of checks
+
+VPX Inspector has **two kinds of checks**, surfaced as separate groups in the UI
+tree. Most of this document is about Deep Analysis rules (the ones you author in
+JSON). Configuration checks are code-defined; you enable/configure them.
+
+| | **Deep Analysis** | **Configuration** |
+|---|---|---|
+| Scope | One table at a time | The whole collection (folder + external state) |
+| Reads | Inside the `.vpx` (elements, script) | Filesystem listing + external data (e.g. a database) |
+| Defined by | Data — the `rules[]` array in rules.json | Code — a class implementing `IConfigurationCheck` |
+| Honors excludes / time budget | Yes | Optional per check (`respectExcludePatterns`); ignores time budget |
+| Runs on "Rescan flagged" | Yes | No (full scan only) |
+| Config location | `rules[]` | `settings.configurationChecks` |
+
+If you're writing a JSON rule, you want **Deep Analysis** (the rest of this doc).
+Adding a new **Configuration** check is a code task — see
+"Adding a configuration check" near the end.
+
+---
+
 ## Project structure (what reads your rule)
 
 ```
 Program.cs                     Entry point. No args -> GUI; path arg -> console scan.
-rules.json                     Settings + rules (the file you edit).
+rules.json                     Settings + configurationChecks + rules (the file you edit).
 Vpx/
   VpxCompoundFile.cs           Opens .vpx (OLE2/MS-CFB), reads GameItem + GameData streams.
   BiffReader.cs                Parses BIFF records ([Int32 size][4-char tag][data]).
   GameItem.cs                  Parsed element: Name, TypeName, TimerEnabled, TimerIntervalMs.
   ScriptAnalyzer.cs            Extracts cGameName from the table script.
   Rules/
-	InspectionRule.cs          The rule + settings schema (RuleSet, InspectionRule, InspectionSettings).
+	InspectionRule.cs          Rule + settings schema (RuleSet, InspectionRule, InspectionSettings,
+							   ConfigurationChecksSettings, PinupMatchSettings).
 	IntervalCondition.cs       Parses "interval" strings (>=10, <10, >40, ==135, ...).
 	RuleEngine.cs              Loads rules.json, compiles name globs, evaluates each element.
+  Checks/                      Configuration (collection-scope) checks.
+	IConfigurationCheck.cs     Contract + ConfigurationCheckContext (folder + exclude-aware listing).
+	ConfigurationCheckResult.cs Generic result (SummaryLines + severity-tagged Sections).
+	ConfigurationCheckRunner.cs Registry: builds + runs the enabled checks.
+  Pinup/
+	PinupDatabase.cs           Read-only SQLite access to PUPDatabase.db.
+	PinupGameMatchCheck.cs     "pinup-game-match" configuration check.
   TableScanService.cs          Resolves .vpx files, applies excludes/time budget, runs the engine.
   TableResult.cs               Per-table outcome (matches, GameName, failure).
-  ReportFormatter.cs           Renders console/UI report + summary checklist.
+  ReportFormatter.cs           Renders console/UI report + summary + configuration checks.
 UI/
   MainForm.cs                  WinForms window: folder picker, rules tree, settings, output.
   AppUi.cs                     STA message-loop host for the GUI.
@@ -168,13 +197,70 @@ Examples: `">=10"`, `"<10"`, `">40"`, `"==135"`, `"100"`.
 
 ```json
 "settings": {
-  "maxRunTimeSeconds": 0,          // 0 = no limit; >0 stops the scan after N seconds.
-  "excludePatterns": [ "VR ROOM*" ]// file-name globs to skip (case-insensitive).
+  "maxRunTimeSeconds": 0,           // 0 = no limit; >0 stops the scan after N seconds.
+  "excludePatterns": [ "VR ROOM*" ],// file-name globs to skip (case-insensitive).
+  "configurationChecks": {          // collection-scope checks (see below).
+    "pinup-game-match": {
+      "enabled": true,
+      "respectExcludePatterns": false,
+      "databasePath": "C:\\vPinball\\PinUPSystem\\PUPDatabase.db",
+      "emulatorIds": [],
+      "matchEmulatorsByFolder": true,
+      "visibleOnly": false
+    }
+  }
 }
 ```
 
-Both can also be edited live in the GUI's **Settings** panel (overrides the file
-for that run without saving).
+`maxRunTimeSeconds` and `excludePatterns` can also be edited live in the GUI's
+**Settings** panel (overrides the file for that run without saving).
+
+---
+
+## Configuration checks
+
+Configuration checks compare the collection (the tables folder) against external
+state. They appear under the **Configuration** group in the UI tree and run only
+on a **full folder scan**.
+
+Every configuration check shares two settings:
+
+| Field | Meaning |
+|---|---|
+| `enabled` | Whether the check runs (also reflected by its checkbox). |
+| `respectExcludePatterns` | `false` (default) = compare against the raw filesystem; `true` = skip files matching the active exclude globs. |
+
+> Why `respectExcludePatterns` defaults to false: a database-vs-disk comparison
+> usually wants the *real* files. But excluding is a legitimate choice — e.g. if
+> you don't care about flagging `VR ROOM*` variants, set it true.
+
+### `pinup-game-match`
+
+Compares `.vpx` files in the folder against games in the PinUP Popper database.
+
+| Field | Meaning |
+|---|---|
+| `databasePath` | Path to `PUPDatabase.db`. |
+| `emulatorIds` | Explicit emulator IDs (EMUID) to include, e.g. `[1, 7, 10]`. |
+| `matchEmulatorsByFolder` | Also include emulators whose `DirGames` equals the scanned folder (normalized). |
+| `visibleOnly` | Restrict to Visible emulators/games. |
+
+Reports **[ERROR]** for games in the DB but missing on disk, and **[INFO]** for
+files on disk not in the DB.
+
+### Adding a configuration check (code task)
+
+1. Create a settings class extending `ConfigurationCheckSettings` (add its own
+   fields) and register it in `ConfigurationChecksSettings` with a JSON key.
+2. Create a class implementing `IConfigurationCheck` (`Id`, `Description`,
+   `Enabled`, `Run(context)`), returning a `ConfigurationCheckResult` with
+   `SummaryLines` and severity-tagged `CheckSection`s.
+3. Register it in `ConfigurationCheckRunner.BuildChecks`.
+4. Add its config block under `settings.configurationChecks` in rules.json.
+
+`ConfigurationCheckContext` gives you `ResolveFolder()` and
+`EnumerateVpxFileNames(folder, respectExcludePatterns)` so the exclude choice is
+honored consistently.
 
 ---
 

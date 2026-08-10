@@ -1,7 +1,17 @@
 {
   "settings": {
     "maxRunTimeSeconds": 0,
-    "excludePatterns": [ "VR ROOM*" ]
+    "excludePatterns": [ "VR ROOM*" ],
+    "configurationChecks": {
+      "pinup-game-match": {
+        "enabled": true,
+        "respectExcludePatterns": false,
+        "databasePath": "C:\\vPinball\\PinUPSystem\\PUPDatabase.db",
+        "emulatorIds": [],
+        "matchEmulatorsByFolder": true,
+        "visibleOnly": false
+      }
+    }
   },
   "rules": [
     {

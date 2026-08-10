@@ -34,6 +34,75 @@ public sealed class InspectionSettings
     /// </summary>
     [JsonPropertyName("excludePatterns")]
     public List<string> ExcludePatterns { get; init; } = new();
+
+    /// <summary>
+    /// Configuration (collection-scope) checks, keyed by check id. Each check has
+    /// its own strongly-typed settings block.
+    /// </summary>
+    [JsonPropertyName("configurationChecks")]
+    public ConfigurationChecksSettings ConfigurationChecks { get; init; } = new();
+}
+
+/// <summary>
+/// Container for the settings of each configuration check.
+/// </summary>
+public sealed class ConfigurationChecksSettings
+{
+    /// <summary>Settings for the PinUP Popper game-match check.</summary>
+    [JsonPropertyName("pinup-game-match")]
+    public PinupMatchSettings PinupGameMatch { get; init; } = new();
+}
+
+/// <summary>
+/// Common settings shared by all configuration checks.
+/// </summary>
+public abstract class ConfigurationCheckSettings
+{
+    /// <summary>Whether the check runs. Defaults to false.</summary>
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; init; }
+
+    /// <summary>
+    /// When true, the check honors the active exclude globs (e.g. skips
+    /// "VR ROOM*"). When false (default) it sees the raw filesystem, which is
+    /// usually what database-vs-disk comparisons want.
+    /// </summary>
+    [JsonPropertyName("respectExcludePatterns")]
+    public bool RespectExcludePatterns { get; init; }
+}
+
+/// <summary>
+/// Settings for the PinUP Popper game-match check (folder vs database).
+/// </summary>
+public sealed class PinupMatchSettings : ConfigurationCheckSettings
+{
+    /// <summary>
+    /// Path to the PinUP Popper SQLite database. Defaults to the standard
+    /// install location when empty.
+    /// </summary>
+    [JsonPropertyName("databasePath")]
+    public string DatabasePath { get; init; } = @"C:\vPinball\PinUPSystem\PUPDatabase.db";
+
+    /// <summary>
+    /// Explicit emulator IDs (EMUID) to include, e.g. [ 1, 7, 10 ]. May be empty
+    /// when relying on <see cref="MatchEmulatorsByFolder"/>.
+    /// </summary>
+    [JsonPropertyName("emulatorIds")]
+    public List<int> EmulatorIds { get; init; } = new();
+
+    /// <summary>
+    /// When true, also include any emulator whose DirGames points at the folder
+    /// being scanned (path-normalized comparison). Defaults to true.
+    /// </summary>
+    [JsonPropertyName("matchEmulatorsByFolder")]
+    public bool MatchEmulatorsByFolder { get; init; } = true;
+
+    /// <summary>
+    /// When true, only consider games/emulators marked Visible in the database.
+    /// Defaults to false (consider all).
+    /// </summary>
+    [JsonPropertyName("visibleOnly")]
+    public bool VisibleOnly { get; init; }
 }
 
 /// <summary>

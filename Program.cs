@@ -67,5 +67,20 @@ static int RunConsole(string[] args)
         });
 
     Console.WriteLine(ReportFormatter.FormatSummary(results));
+
+    // Configuration (collection-scope) checks, e.g. PinUP game match.
+    var checkContext = new VPX_Inspector.Vpx.Checks.ConfigurationCheckContext
+    {
+        InputPath = inputPath,
+        ExcludePatterns = engine.Settings.ExcludePatterns,
+        IsFullScan = true,
+    };
+    var checkResults = VPX_Inspector.Vpx.Checks.ConfigurationCheckRunner.Run(
+        engine.Settings, checkContext);
+    foreach (var checkResult in checkResults)
+    {
+        Console.Write(ReportFormatter.FormatConfigurationCheck(checkResult));
+    }
+
     return 0;
 }

@@ -2,6 +2,7 @@ using System.Runtime.Versioning;
 using System.Text;
 using System.Windows.Forms;
 using VPX_Inspector.Vpx;
+using VPX_Inspector.Vpx.Checks;
 using VPX_Inspector.Vpx.Rules;
 
 namespace VPX_Inspector.UI;
@@ -32,6 +33,7 @@ public sealed class MainForm : Form
     private readonly string _rulesPath;
     private RuleEngine? _engine;
     private string? _serviceError;
+    private bool _suppressTreeCheck;
 
     // The most recent scan results, used to drive "rescan flagged".
     private List<TableResult> _lastResults = new();
@@ -160,11 +162,13 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             CheckBoxes = true,
-            ShowLines = false,
-            ShowRootLines = false,
+            ShowLines = true,
+            ShowRootLines = true,
+            ShowPlusMinus = true,
             HideSelection = false,
-            FullRowSelect = true,
+            FullRowSelect = false,
         };
+        _rulesTree.AfterCheck += OnRuleTreeAfterCheck;
 
         var rulesHeader = new Panel { Dock = DockStyle.Top, Height = 26 };
         var rulesLabel = new Label
@@ -400,20 +404,79 @@ public sealed class MainForm : Form
             return;
         }
 
+        // Group 1: Configuration (collection-scope) checks.
+        var configParent = new TreeNode("Configuration") { Tag = GroupTag };
+        foreach (IConfigurationCheck check in ConfigurationCheckRunner.BuildChecks(_engine.Settings))
+        {
+            var node = new TreeNode($"{check.Id}  —  {check.Description}")
+            {
+                Tag = new CheckNodeTag(check.Id, IsConfiguration: true),
+                Checked = check.Enabled,
+                ToolTipText = check.Description,
+            };
+            configParent.Nodes.Add(node);
+        }
+
+        // Group 2: Deep Analysis (per-table) rules.
+        var deepParent = new TreeNode("Deep Analysis") { Tag = GroupTag };
         foreach (InspectionRule rule in _engine.Rules)
         {
             var node = new TreeNode($"{rule.Id}  —  {rule.Description}")
             {
-                Tag = rule.Id,
+                Tag = new CheckNodeTag(rule.Id, IsConfiguration: false),
                 Checked = rule.Enabled,
                 ToolTipText = rule.Description,
             };
-            _rulesTree.Nodes.Add(node);
+            deepParent.Nodes.Add(node);
         }
+
+        _rulesTree.Nodes.Add(configParent);
+        _rulesTree.Nodes.Add(deepParent);
+
+        // Parent checkboxes reflect children and start expanded.
+        configParent.Checked = configParent.Nodes.Cast<TreeNode>().Any(n => n.Checked);
+        deepParent.Checked = deepParent.Nodes.Cast<TreeNode>().Any(n => n.Checked);
+        configParent.Expand();
+        deepParent.Expand();
 
         _rulesTree.EndUpdate();
 
         LoadSettingsIntoUi();
+    }
+
+    /// <summary>Marker tag for group (parent) nodes.</summary>
+    private const string GroupTag = "__group__";
+
+    /// <summary>Identifies a leaf check node and which family it belongs to.</summary>
+    private sealed record CheckNodeTag(string Id, bool IsConfiguration);
+
+    /// <summary>Keeps parent/child checkboxes in sync when the user toggles a node.</summary>
+    private void OnRuleTreeAfterCheck(object? sender, TreeViewEventArgs e)
+    {
+        if (_suppressTreeCheck || e.Node is null)
+        {
+            return;
+        }
+
+        _suppressTreeCheck = true;
+        try
+        {
+            if (ReferenceEquals(e.Node.Tag, GroupTag))
+            {
+                foreach (TreeNode child in e.Node.Nodes)
+                {
+                    child.Checked = e.Node.Checked;
+                }
+            }
+            else if (e.Node.Parent is TreeNode parent)
+            {
+                parent.Checked = parent.Nodes.Cast<TreeNode>().Any(n => n.Checked);
+            }
+        }
+        finally
+        {
+            _suppressTreeCheck = false;
+        }
     }
 
     /// <summary>Populates the settings controls from the loaded engine settings.</summary>
@@ -445,16 +508,34 @@ public sealed class MainForm : Form
         {
             MaxRunTimeSeconds = (double)_maxRunTime.Value,
             ExcludePatterns = excludes,
+            // Configuration checks aren't edited in the UI; carry file config through.
+            ConfigurationChecks = _engine?.Settings.ConfigurationChecks ?? new ConfigurationChecksSettings(),
         };
     }
 
-    /// <summary>The rule ids currently checked in the tree.</summary>
-    private HashSet<string> GetEnabledRuleIds() =>
-        _rulesTree.Nodes
-            .Cast<TreeNode>()
-            .Where(n => n.Checked && n.Tag is string)
-            .Select(n => (string)n.Tag)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    /// <summary>The deep-analysis rule ids currently checked in the tree.</summary>
+    private HashSet<string> GetEnabledRuleIds() => GetCheckedLeafIds(isConfiguration: false);
+
+    /// <summary>The configuration check ids currently checked in the tree.</summary>
+    private HashSet<string> GetEnabledConfigurationCheckIds() => GetCheckedLeafIds(isConfiguration: true);
+
+    private HashSet<string> GetCheckedLeafIds(bool isConfiguration)
+    {
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (TreeNode parent in _rulesTree.Nodes)
+        {
+            foreach (TreeNode leaf in parent.Nodes)
+            {
+                if (leaf.Checked && leaf.Tag is CheckNodeTag tag && tag.IsConfiguration == isConfiguration)
+                {
+                    ids.Add(tag.Id);
+                }
+            }
+        }
+
+        return ids;
+    }
 
     private void OnOpenRules(object? sender, LinkLabelLinkClickedEventArgs e)
     {
@@ -511,6 +592,7 @@ public sealed class MainForm : Form
 
         // Determine the set of files to scan.
         List<string> files;
+        string scanInput = _folderBox.Text.Trim();
         if (mode == ScanMode.FlaggedOnly)
         {
             files = _lastResults.Where(r => r.IsFlagged).Select(r => r.FilePath).ToList();
@@ -553,12 +635,16 @@ public sealed class MainForm : Form
 
         // Build a service using the rules currently checked in the tree.
         HashSet<string> enabledIds = GetEnabledRuleIds();
-        if (enabledIds.Count == 0)
+        HashSet<string> enabledCheckIds = mode == ScanMode.Full
+            ? GetEnabledConfigurationCheckIds()
+            : new HashSet<string>();
+
+        if (enabledIds.Count == 0 && enabledCheckIds.Count == 0)
         {
             SetScanningState(false, 0);
             _cts.Dispose();
             _cts = null;
-            MessageBox.Show(this, "No rules are enabled. Check at least one rule in the list.",
+            MessageBox.Show(this, "Nothing selected. Check at least one rule or configuration check.",
                 "VPX Inspector", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
@@ -595,6 +681,24 @@ public sealed class MainForm : Form
 
             // Append the summary and remember results for future rescans.
             sb.Append(ReportFormatter.FormatSummary(results));
+
+            // Configuration (collection-scope) checks - full folder scans only.
+            if (mode == ScanMode.Full)
+            {
+                var checkContext = new ConfigurationCheckContext
+                {
+                    InputPath = scanInput,
+                    ExcludePatterns = settings.ExcludePatterns,
+                    IsFullScan = true,
+                };
+                HashSet<string> selectedCheckIds = enabledCheckIds;
+                var checkResults = ConfigurationCheckRunner.Run(settings, checkContext, selectedCheckIds);
+                foreach (var checkResult in checkResults)
+                {
+                    sb.Append(ReportFormatter.FormatConfigurationCheck(checkResult));
+                }
+            }
+
             AppendOutput(Environment.NewLine + sb);
 
             MergeResults(mode, results);
