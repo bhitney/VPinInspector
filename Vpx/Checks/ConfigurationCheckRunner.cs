@@ -21,6 +21,7 @@ public static class ConfigurationCheckRunner
         return new IConfigurationCheck[]
         {
             new PinupGameMatchCheck(config.PinupGameMatch),
+            new PinupMediaMatchCheck(config.MediaMatch),
             new VrRoomMatchCheck(config.VrRoomMatching),
             // Future configuration checks are added here.
         };

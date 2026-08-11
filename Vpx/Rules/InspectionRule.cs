@@ -52,6 +52,10 @@ public sealed class ConfigurationChecksSettings
     [JsonPropertyName("pinup-game-match")]
     public PinupMatchSettings PinupGameMatch { get; init; } = new();
 
+    /// <summary>Settings for the PinUP Popper media-match check.</summary>
+    [JsonPropertyName("media-match")]
+    public PinupMediaMatchSettings MediaMatch { get; init; } = new();
+
     /// <summary>Settings for the VR ROOM matching check.</summary>
     [JsonPropertyName("vr-room-matching")]
     public VrRoomMatchSettings VrRoomMatching { get; init; } = new();
@@ -107,6 +111,56 @@ public sealed class PinupMatchSettings : ConfigurationCheckSettings
     /// </summary>
     [JsonPropertyName("visibleOnly")]
     public bool VisibleOnly { get; init; }
+}
+
+/// <summary>
+/// Settings for the PinUP Popper media-match check: verifies that Popper media
+/// exists for each registered game, per selected media folder (Playfield, Topper,
+/// BackGlass, DMD, Loading, Menu). Media lives under the emulator's DirMedia
+/// (or the GlobalSettings GlobalMediaDir fallback), in a per-type subfolder, named
+/// after the game file with any extension (video or image).
+/// </summary>
+public sealed class PinupMediaMatchSettings : ConfigurationCheckSettings
+{
+    /// <summary>
+    /// Path to the PinUP Popper SQLite database. Defaults to the standard
+    /// install location when empty.
+    /// </summary>
+    [JsonPropertyName("databasePath")]
+    public string DatabasePath { get; init; } = @"C:\vPinball\PinUPSystem\PUPDatabase.db";
+
+    /// <summary>
+    /// Explicit emulator IDs (EMUID) to include, e.g. [ 1, 7, 10 ]. When any are
+    /// supplied they take precedence and <see cref="MatchEmulatorsByFolder"/> is
+    /// ignored, so the whole Popper database can be checked regardless of where the
+    /// source .vpx files sit. May be empty to fall back to folder matching.
+    /// </summary>
+    [JsonPropertyName("emulatorIds")]
+    public List<int> EmulatorIds { get; init; } = new();
+
+    /// <summary>
+    /// When true and <see cref="EmulatorIds"/> is empty, include any emulator whose
+    /// DirGames points at the folder being scanned (path-normalized comparison).
+    /// Ignored when explicit emulator IDs are supplied. Defaults to true.
+    /// </summary>
+    [JsonPropertyName("matchEmulatorsByFolder")]
+    public bool MatchEmulatorsByFolder { get; init; } = true;
+
+    /// <summary>
+    /// When true, only consider games/emulators marked Visible in the database.
+    /// Defaults to false (consider all).
+    /// </summary>
+    [JsonPropertyName("visibleOnly")]
+    public bool VisibleOnly { get; init; }
+
+    /// <summary>
+    /// Media subfolders (relative to the resolved media directory) to check, e.g.
+    /// [ "Playfield", "Topper", "BackGlass", "DMD", "Loading", "Menu" ]. Each is
+    /// checked independently so a user can target just one media type. Defaults to
+    /// Playfield when empty.
+    /// </summary>
+    [JsonPropertyName("mediaFolders")]
+    public List<string> MediaFolders { get; init; } = new() { "Playfield" };
 }
 
 /// <summary>

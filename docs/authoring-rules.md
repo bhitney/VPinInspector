@@ -80,6 +80,7 @@ Vpx/
   Pinup/
 	PinupDatabase.cs           Read-only SQLite access to PUPDatabase.db.
 	PinupGameMatchCheck.cs     "pinup-game-match" configuration check.
+	PinupMediaMatchCheck.cs    "media-match" configuration check.
   TableScanService.cs          Resolves .vpx files, applies excludes/time budget, runs the engine.
   TableResult.cs               Per-table outcome (matches, GameName, failure).
   ReportFormatter.cs           Renders console/UI report + summary + configuration checks.
@@ -247,6 +248,28 @@ Compares `.vpx` files in the folder against games in the PinUP Popper database.
 
 Reports **[ERROR]** for games in the DB but missing on disk, and **[INFO]** for
 files on disk not in the DB.
+
+### `media-match`
+
+Verifies that PinUP Popper media exists for each game registered for the selected
+emulators. For every game, Popper looks in the emulator's `DirMedia` (falling back
+to the `GlobalSettings` `GlobalMediaDir` when the emulator has none), inside a
+per-type subfolder, for a file named after the game file with **any** extension
+(the media may be a video or an image, e.g. `MyTable.mp4` or `MyTable.png`).
+
+Each media folder is checked independently, so you can target just one media type
+(e.g. only flag missing toppers) by listing only that folder.
+
+| Field | Meaning |
+|---|---|
+| `databasePath` | Path to `PUPDatabase.db`. |
+| `emulatorIds` | Explicit emulator IDs (EMUID) to include, e.g. `[1, 7, 10]`. When supplied, these take precedence and `matchEmulatorsByFolder` is ignored — letting you audit media for any games in the database regardless of where their `.vpx` files sit. |
+| `matchEmulatorsByFolder` | Used only when `emulatorIds` is empty: include emulators whose `DirGames` equals the scanned folder (normalized). |
+| `visibleOnly` | Restrict to Visible emulators/games. |
+| `mediaFolders` | Media subfolders to check, e.g. `[ "Playfield", "Topper", "BackGlass", "DMD", "Loading", "Menu" ]`. Defaults to `Playfield`. |
+
+Reports **[ERROR]** for each game with no media file in a selected folder, grouped
+by media type.
 
 ### `vr-room-matching`
 
