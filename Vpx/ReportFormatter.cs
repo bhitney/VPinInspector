@@ -45,7 +45,15 @@ public static class ReportFormatter
 
         if (result.Matches.Count == 0)
         {
-            sb.AppendLine("  No rule matches.");
+            if (result.Dof.IsMissing)
+            {
+                sb.AppendLine($"  [WARN] dof-check: no DOF entry for ROM '{result.Dof.Rom}'.");
+            }
+            else
+            {
+                sb.AppendLine("  No rule matches.");
+            }
+
             return sb.ToString();
         }
 
@@ -63,6 +71,11 @@ public static class ReportFormatter
                 sb.AppendLine(
                     $"      - {item.Name,-30} {item.TypeName,-12} {interval,-10} enabled={item.TimerEnabled}  {proposal,-22} ({item.StreamName})");
             }
+        }
+
+        if (result.Dof.IsMissing)
+        {
+            sb.AppendLine($"  [WARN] dof-check: no DOF entry for ROM '{result.Dof.Rom}'.");
         }
 
         return sb.ToString();
@@ -92,7 +105,7 @@ public static class ReportFormatter
                 continue;
             }
 
-            if (result.Matches.Count == 0)
+            if (result.Matches.Count == 0 && !result.Dof.IsMissing)
             {
                 // Clean tables are omitted from the checklist to reduce noise.
                 continue;
@@ -121,6 +134,11 @@ public static class ReportFormatter
                     });
 
                 sb.AppendLine($"      [ ] {rule.Id}: {string.Join(", ", names)}");
+            }
+
+            if (result.Dof.IsMissing)
+            {
+                sb.AppendLine($"      [ ] dof-check: no DOF entry for ROM '{result.Dof.Rom}'");
             }
         }
 

@@ -1,8 +1,11 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
 using System.Windows.Forms;
 using VPX_Inspector.Vpx;
 using VPX_Inspector.Vpx.Checks;
+using VPX_Inspector.Vpx.Dof;
 using VPX_Inspector.Vpx.Rules;
 
 namespace VPX_Inspector.UI;
@@ -20,11 +23,13 @@ public sealed class MainForm : Form
     private readonly Button _rescanFlaggedButton;
     private readonly Button _reloadRulesButton;
     private readonly Button _cancelButton;
-    private readonly TextBox _outputBox;
+    private readonly RichTextBox _outputBox;
     private readonly TreeView _rulesTree;
     private readonly LinkLabel _openRulesLink;
     private readonly TextBox _excludeBox;
     private readonly NumericUpDown _maxRunTime;
+    private readonly TextBox _vpxExeBox;
+    private readonly TextBox _dofConfigBox;
     private readonly ToolTip _toolTip = new();
     private readonly SplitContainer _split;
     private readonly Label _statusLabel;
@@ -38,6 +43,10 @@ public sealed class MainForm : Form
     // The most recent scan results, used to drive "rescan flagged".
     private List<TableResult> _lastResults = new();
     private CancellationTokenSource? _cts;
+
+    // Maps checklist table-name link text to the full .vpx file path to open.
+    private readonly Dictionary<string, string> _tableLinkPaths =
+        new(StringComparer.OrdinalIgnoreCase);
 
     public MainForm()
     {
@@ -133,16 +142,17 @@ public sealed class MainForm : Form
         topPanel.Controls.Add(buttonFlow, 0, 1);
         topPanel.SetColumnSpan(buttonFlow, 3);
 
-        _outputBox = new TextBox
+        _outputBox = new RichTextBox
         {
             Dock = DockStyle.Fill,
-            Multiline = true,
             ReadOnly = true,
-            ScrollBars = ScrollBars.Both,
+            ScrollBars = RichTextBoxScrollBars.Both,
             WordWrap = false,
+            DetectUrls = false,
             Font = new Font("Consolas", 9.5f),
             BackColor = Color.White,
         };
+        _outputBox.LinkClicked += OnOutputLinkClicked;
 
         var outputHost = new Panel
         {
@@ -194,7 +204,7 @@ public sealed class MainForm : Form
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 2,
-            RowCount = 3,
+            RowCount = 5,
             Margin = new Padding(0),
             Padding = new Padding(0, 0, 0, 6),
         };
@@ -242,12 +252,46 @@ public sealed class MainForm : Form
         };
         _toolTip.SetToolTip(_maxRunTime, "Stop scanning after this many seconds (0 = no limit).");
 
+        var vpxExeLabel = new Label
+        {
+            Text = "VPX exe:",
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(3, 6, 6, 3),
+        };
+        _vpxExeBox = new TextBox
+        {
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
+            Margin = new Padding(3, 3, 3, 3),
+        };
+        _toolTip.SetToolTip(_vpxExeBox,
+            "Full path to vpinballx64.exe. Enables clicking a table name in the checklist to open it with -edit.");
+
+        var dofConfigLabel = new Label
+        {
+            Text = "DOF config:",
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(3, 6, 6, 3),
+        };
+        _dofConfigBox = new TextBox
+        {
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
+            Margin = new Padding(3, 3, 3, 3),
+        };
+        _toolTip.SetToolTip(_dofConfigBox,
+            "Path to the DirectOutput config .ini used by the dof-check rule. Empty = default directoutputconfig51.ini if present.");
+
         settingsPanel.Controls.Add(settingsHeader, 0, 0);
         settingsPanel.SetColumnSpan(settingsHeader, 2);
         settingsPanel.Controls.Add(excludeLabel, 0, 1);
         settingsPanel.Controls.Add(_excludeBox, 1, 1);
         settingsPanel.Controls.Add(maxTimeLabel, 0, 2);
         settingsPanel.Controls.Add(_maxRunTime, 1, 2);
+        settingsPanel.Controls.Add(vpxExeLabel, 0, 3);
+        settingsPanel.Controls.Add(_vpxExeBox, 1, 3);
+        settingsPanel.Controls.Add(dofConfigLabel, 0, 4);
+        settingsPanel.Controls.Add(_dofConfigBox, 1, 4);
 
         rulesPanel.Controls.Add(_rulesTree);
         rulesPanel.Controls.Add(settingsPanel);
@@ -430,6 +474,16 @@ public sealed class MainForm : Form
             deepParent.Nodes.Add(node);
         }
 
+        // Built-in DOF (DirectOutput) check: not a pattern rule, so it is added
+        // as a fixed node under Deep Analysis and driven by its reserved id.
+        var dofNode = new TreeNode($"{DofConfig.CheckId}  —  Game has a DirectOutput (DOF) config entry")
+        {
+            Tag = new CheckNodeTag(DofConfig.CheckId, IsConfiguration: false),
+            Checked = true,
+            ToolTipText = "Warns when a table's cGameName/ROM has no entry in the DOF config.",
+        };
+        deepParent.Nodes.Add(dofNode);
+
         _rulesTree.Nodes.Add(configParent);
         _rulesTree.Nodes.Add(deepParent);
 
@@ -489,6 +543,8 @@ public sealed class MainForm : Form
 
         InspectionSettings settings = _engine.Settings;
         _excludeBox.Text = string.Join("; ", settings.ExcludePatterns);
+        _vpxExeBox.Text = settings.VpxExecutablePath;
+        _dofConfigBox.Text = settings.DofConfigPath;
 
         decimal seconds = (decimal)settings.MaxRunTimeSeconds;
         _maxRunTime.Value = Math.Clamp(seconds, _maxRunTime.Minimum, _maxRunTime.Maximum);
@@ -508,6 +564,8 @@ public sealed class MainForm : Form
         {
             MaxRunTimeSeconds = (double)_maxRunTime.Value,
             ExcludePatterns = excludes,
+            VpxExecutablePath = _vpxExeBox.Text.Trim(),
+            DofConfigPath = _dofConfigBox.Text.Trim(),
             // Configuration checks aren't edited in the UI; carry file config through.
             ConfigurationChecks = _engine?.Settings.ConfigurationChecks ?? new ConfigurationChecksSettings(),
         };
@@ -714,7 +772,12 @@ public sealed class MainForm : Form
                 }
             }
 
+            // Register clickable table-name links for flagged tables (only when
+            // a VPX executable is configured), then render the summary text and
+            // convert those table names into links.
+            RegisterTableLinks(results);
             AppendOutput(Environment.NewLine + sb);
+            LinkifyTableNames();
 
             // Only update retained results when a per-table scan actually ran.
             if (runDeepAnalysis)
@@ -788,6 +851,8 @@ public sealed class MainForm : Form
         _rulesTree.Enabled = !scanning;
         _excludeBox.Enabled = !scanning;
         _maxRunTime.Enabled = !scanning;
+        _vpxExeBox.Enabled = !scanning;
+        _dofConfigBox.Enabled = !scanning;
         _openRulesLink.Enabled = !scanning;
         _rescanFlaggedButton.Enabled = !scanning && _lastResults.Any(r => r.IsFlagged);
         _cancelButton.Enabled = scanning;
@@ -807,5 +872,148 @@ public sealed class MainForm : Form
     private void AppendOutput(string text)
     {
         _outputBox.AppendText(text);
+    }
+
+    /// <summary>
+    /// Rebuilds the map of clickable table names to their full .vpx paths. Only
+    /// flagged tables are registered, and only when a VPX executable is
+    /// configured (otherwise nothing is made clickable).
+    /// </summary>
+    private void RegisterTableLinks(IReadOnlyList<TableResult> results)
+    {
+        _tableLinkPaths.Clear();
+
+        if (string.IsNullOrWhiteSpace(_vpxExeBox.Text))
+        {
+            return;
+        }
+
+        foreach (TableResult result in results)
+        {
+            if (result.IsFlagged && !string.IsNullOrEmpty(result.FilePath))
+            {
+                _tableLinkPaths[result.TableName] = result.FilePath;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Marks each registered table name in the checklist as a clickable link.
+    /// Only occurrences that begin a checklist entry ("[ ] &lt;name&gt;") are linked.
+    /// </summary>
+    private void LinkifyTableNames()
+    {
+        if (_tableLinkPaths.Count == 0)
+        {
+            return;
+        }
+
+        int originalStart = _outputBox.SelectionStart;
+        int originalLength = _outputBox.SelectionLength;
+        string text = _outputBox.Text;
+
+        foreach (string tableName in _tableLinkPaths.Keys)
+        {
+            string needle = "[ ] " + tableName;
+            int searchFrom = 0;
+            while (true)
+            {
+                int idx = text.IndexOf(needle, searchFrom, StringComparison.Ordinal);
+                if (idx < 0)
+                {
+                    break;
+                }
+
+                int nameStart = idx + "[ ] ".Length;
+                _outputBox.Select(nameStart, tableName.Length);
+                SetSelectionLink(true);
+                searchFrom = nameStart + tableName.Length;
+            }
+        }
+
+        _outputBox.Select(originalStart, originalLength);
+    }
+
+    /// <summary>Launches the configured VPX executable to edit the clicked table.</summary>
+    private void OnOutputLinkClicked(object? sender, LinkClickedEventArgs e)
+    {
+        if (e.LinkText is null || !_tableLinkPaths.TryGetValue(e.LinkText, out string? tablePath))
+        {
+            return;
+        }
+
+        string exe = _vpxExeBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(exe) || !File.Exists(exe))
+        {
+            MessageBox.Show(this,
+                "The configured VPX executable path is empty or does not exist. Set it in the Settings panel.",
+                "VPX Inspector", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = exe,
+                Arguments = $"-edit \"{tablePath}\"",
+                UseShellExecute = false,
+            });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, $"Failed to open the table in VPX:{Environment.NewLine}{ex.Message}",
+                "VPX Inspector", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    // --- RichTextBox link support (mark current selection as a hyperlink) ---
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CHARFORMAT2
+    {
+        public int cbSize;
+        public int dwMask;
+        public int dwEffects;
+        public int yHeight;
+        public int yOffset;
+        public int crTextColor;
+        public byte bCharSet;
+        public byte bPitchAndFamily;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
+        public char[] szFaceName;
+        public short wWeight;
+        public short sSpacing;
+        public int crBackColor;
+        public int lcid;
+        public int dwReserved;
+        public short sStyle;
+        public short wKerning;
+        public byte bUnderlineType;
+        public byte bAnimation;
+        public byte bRevAuthor;
+        public byte bReserved1;
+    }
+
+    private const int WM_USER = 0x0400;
+    private const int EM_SETCHARFORMAT = WM_USER + 68;
+    private const int SCF_SELECTION = 0x0001;
+    private const int CFM_LINK = 0x00000020;
+    private const int CFE_LINK = 0x00000020;
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, ref CHARFORMAT2 lParam);
+
+    private void SetSelectionLink(bool link)
+    {
+        var cf = new CHARFORMAT2
+        {
+            cbSize = Marshal.SizeOf<CHARFORMAT2>(),
+            szFaceName = new char[32],
+            dwMask = CFM_LINK,
+            dwEffects = link ? CFE_LINK : 0,
+        };
+
+        SendMessage(_outputBox.Handle, EM_SETCHARFORMAT, (IntPtr)SCF_SELECTION, ref cf);
     }
 }

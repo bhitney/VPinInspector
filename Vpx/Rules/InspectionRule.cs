@@ -36,6 +36,23 @@ public sealed class InspectionSettings
     public List<string> ExcludePatterns { get; init; } = new();
 
     /// <summary>
+    /// Full path to the Visual Pinball executable used to open a table when its
+    /// name is clicked in the summary checklist. The table is launched as
+    /// <c>vpinballx64.exe -edit "&lt;full table path&gt;"</c>. Empty = not configured.
+    /// </summary>
+    [JsonPropertyName("vpxExecutablePath")]
+    public string VpxExecutablePath { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Path to the DirectOutput Framework (DOF) configuration .ini used by the
+    /// "dof-check" deep-analysis rule. When empty, the standard location
+    /// (<c>C:\DirectOutput\Config\directoutputconfig51.ini</c>) is used if it
+    /// exists.
+    /// </summary>
+    [JsonPropertyName("dofConfigPath")]
+    public string DofConfigPath { get; init; } = string.Empty;
+
+    /// <summary>
     /// Configuration (collection-scope) checks, keyed by check id. Each check has
     /// its own strongly-typed settings block.
     /// </summary>

@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using VPX_Inspector.Vpx.Dof;
 using VPX_Inspector.Vpx.Rules;
 
 namespace VPX_Inspector.Vpx;
@@ -13,6 +14,10 @@ public sealed class TableScanService
     private readonly RuleEngine _engine;
     private readonly IReadOnlySet<string>? _enabledRuleIds;
     private readonly InspectionSettings _settings;
+
+    // DOF config is loaded once on first use and reused across all tables.
+    private bool _dofResolved;
+    private DofConfig? _dofConfig;
 
     public TableScanService(
         RuleEngine engine,
@@ -96,6 +101,52 @@ public sealed class TableScanService
     }
 
     /// <summary>
+    /// Whether the DOF deep-analysis check is active for this run.
+    /// </summary>
+    private bool IsDofCheckEnabled =>
+        _enabledRuleIds is null || _enabledRuleIds.Contains(DofConfig.CheckId);
+
+    /// <summary>
+    /// Lazily loads the DOF config (once) and evaluates the given game name/ROM
+    /// against it. Returns a not-evaluated result when the check is disabled or
+    /// no DOF config is available.
+    /// </summary>
+    private DofCheckResult EvaluateDof(string gameName)
+    {
+        if (!IsDofCheckEnabled)
+        {
+            return DofCheckResult.NotEvaluated;
+        }
+
+        if (!_dofResolved)
+        {
+            _dofResolved = true;
+            string? path = DofConfig.ResolveConfigPath(_settings.DofConfigPath);
+            if (path is not null && File.Exists(path))
+            {
+                try
+                {
+                    _dofConfig = DofConfig.LoadFromFile(path);
+                }
+                catch
+                {
+                    _dofConfig = null;
+                }
+            }
+        }
+
+        if (_dofConfig is null)
+        {
+            return DofCheckResult.NotEvaluated;
+        }
+
+        return new DofCheckResult(
+            Evaluated: true,
+            Rom: gameName,
+            HasDofEntry: _dofConfig.HasRom(gameName));
+    }
+
+    /// <summary>
     /// Scans a single .vpx file into a <see cref="TableResult"/>.
     /// </summary>
     public TableResult ScanFile(string vpxFile)
@@ -114,6 +165,7 @@ public sealed class TableScanService
             return new TableResult(tableName, vpxFile, Failed: false, matches)
             {
                 GameName = gameName,
+                Dof = EvaluateDof(gameName),
             };
         }
         catch (Exception ex)

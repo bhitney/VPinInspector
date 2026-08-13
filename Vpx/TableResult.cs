@@ -1,3 +1,4 @@
+using VPX_Inspector.Vpx.Dof;
 using VPX_Inspector.Vpx.Rules;
 
 namespace VPX_Inspector.Vpx;
@@ -12,14 +13,17 @@ public sealed record TableResult(
     bool Failed,
     IReadOnlyList<RuleMatch> Matches)
 {
-    /// <summary>True when at least one rule matched.</summary>
-    public bool IsFlagged => !Failed && Matches.Count > 0;
+    /// <summary>True when at least one rule matched or the DOF check flagged it.</summary>
+    public bool IsFlagged => !Failed && (Matches.Count > 0 || Dof.IsMissing);
 
     /// <summary>True when the table read successfully with no matches.</summary>
-    public bool IsClean => !Failed && Matches.Count == 0;
+    public bool IsClean => !Failed && Matches.Count == 0 && !Dof.IsMissing;
 
     /// <summary>Optional error message captured when <see cref="Failed"/> is true.</summary>
     public string? Error { get; init; }
+
+    /// <summary>The DOF (DirectOutput) check outcome for this table.</summary>
+    public DofCheckResult Dof { get; init; } = DofCheckResult.NotEvaluated;
 
     /// <summary>
     /// The resolved game name for the table: the script's cGameName when present,

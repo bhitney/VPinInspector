@@ -8,12 +8,15 @@ namespace VPX_Inspector.Vpx;
 public static partial class ScriptAnalyzer
 {
     // Matches an assignment of cGameName to a quoted string, tolerant of the
-    // declaration keyword (Const/Dim/Public/Private/none) and spacing:
+    // declaration keyword (Const/Dim/Public/Private/none) and spacing, and of
+    // the assignment appearing inline rather than at the start of a line, e.g.
     //   Const cGameName = "myrom"
     //   cGameName = "myrom"
     //   Private Const cGameName="myrom"
+    //   If RomSet = 1 then cGameName="blckhole": ... : End If
+    // For dynamic tables (multiple assignments) the first uncommented one wins.
     [GeneratedRegex(
-        "(?im)^\\s*(?:public\\s+|private\\s+)?(?:const\\s+|dim\\s+)?cGameName\\s*=\\s*\"([^\"]*)\"",
+        "(?im)cGameName\\s*=\\s*\"([^\"]*)\"",
         RegexOptions.CultureInvariant)]
     private static partial Regex CGameNameRegex();
 

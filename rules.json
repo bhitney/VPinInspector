@@ -2,6 +2,8 @@
   "settings": {
     "maxRunTimeSeconds": 0,
     "excludePatterns": [ "VR ROOM*" ],
+    "vpxExecutablePath": "C:\\vPinball\\VisualPinball\\vpinballx64.exe",
+    "dofConfigPath": "C:\\DirectOutput\\Config\\directoutputconfig51.ini",
     "configurationChecks": {
       "pinup-game-match": {
         "enabled": true,
@@ -15,7 +17,7 @@
         "enabled": true,
         "respectExcludePatterns": false,
         "databasePath": "C:\\vPinball\\PinUPSystem\\PUPDatabase.db",
-        "emulatorIds": [],
+        "emulatorIds": [7,10],
         "matchEmulatorsByFolder": true,
         "visibleOnly": false,
         "mediaFolders": [ "Playfield", "Topper", "BackGlass", "DMD", "Loading", "Menu" ]
