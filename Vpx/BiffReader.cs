@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace VPX_Inspector.Vpx;
+namespace VPin.Inspector.Vpx;
 
 /// <summary>
 /// A single BIFF record: a 4-character tag plus its raw payload bytes.

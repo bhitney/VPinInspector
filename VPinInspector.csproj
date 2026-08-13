@@ -3,16 +3,30 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
-    <RootNamespace>VPX_Inspector</RootNamespace>
+    <RootNamespace>VPin.Inspector</RootNamespace>
+    <AssemblyName>VPinInspector</AssemblyName>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="Core\VPinInspector.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
     <PackageReference Include="OpenMcdf" Version="3.2.0" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
+  </ItemGroup>
+
+  <!-- Core is compiled by its own class library; exclude it from the app glob. -->
+  <ItemGroup>
+    <Compile Remove="Core\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="Core\VPinInspector.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

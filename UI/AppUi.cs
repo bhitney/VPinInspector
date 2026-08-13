@@ -1,7 +1,7 @@
 using System.Runtime.Versioning;
 using System.Windows.Forms;
 
-namespace VPX_Inspector.UI;
+namespace VPin.Inspector.UI;
 
 /// <summary>
 /// Entry point for the graphical interface. Kept separate so the console path
@@ -25,7 +25,7 @@ public static class AppUi
 
         var uiThread = new Thread(RunMessageLoop)
         {
-            Name = "VPX Inspector UI",
+            Name = "VPin Inspector UI",
             IsBackground = false,
         };
         uiThread.SetApartmentState(ApartmentState.STA);

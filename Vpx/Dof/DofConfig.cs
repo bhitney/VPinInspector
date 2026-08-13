@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace VPX_Inspector.Vpx.Dof;
+namespace VPin.Inspector.Vpx.Dof;
 
 /// <summary>
 /// Parses a DirectOutput Framework (DOF) configuration .ini file. For now only

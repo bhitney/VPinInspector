@@ -1,6 +1,6 @@
 using Microsoft.Data.Sqlite;
 
-namespace VPX_Inspector.Vpx.Pinup;
+namespace VPin.Inspector.Vpx.Pinup;
 
 /// <summary>A row from the PinUP Popper Emulators table (subset of columns).</summary>
 public sealed record PinupEmulator(int EmuId, string EmuName, string DirGames, bool Visible);

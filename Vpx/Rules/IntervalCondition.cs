@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace VPX_Inspector.Vpx.Rules;
+namespace VPin.Inspector.Vpx.Rules;
 
 /// <summary>
 /// Parses a simple interval condition such as "&gt;=10", "&lt;10", "==135" or "&gt;40"

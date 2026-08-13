@@ -1,21 +1,28 @@
 using System.Text.RegularExpressions;
+using VPin.Inspector.Core.Platforms;
 
-namespace VPX_Inspector.Vpx.Checks;
+namespace VPin.Inspector.Core.Rules;
 
 /// <summary>
-/// Inputs available to a configuration check when it runs: the scanned path plus
-/// helpers for enumerating .vpx files with or without the exclude filter.
+/// Inputs for a collection-scope rule: the scanned path plus the loaded tables
+/// (already parsed once by the core) and the active platforms. This is where
+/// folder-vs-external-state modules live — DOF, PinUP Popper, VPS version
+/// checks — each of which is opt-in like any other rule.
 /// </summary>
-public sealed class ConfigurationCheckContext
+public sealed class CollectionContext
 {
-    /// <summary>The path the user scanned (file or folder).</summary>
+    /// <summary>The path the user scanned (a file or a folder).</summary>
     public required string InputPath { get; init; }
+
+    /// <summary>Every table successfully loaded during this scan.</summary>
+    public required IReadOnlyList<TableContext> Tables { get; init; }
+
+    /// <summary>Platforms that participated in this scan.</summary>
+    public IReadOnlyList<IPinballPlatform> Platforms { get; init; }
+        = Array.Empty<IPinballPlatform>();
 
     /// <summary>The active exclude globs (from settings/UI).</summary>
     public IReadOnlyList<string> ExcludePatterns { get; init; } = Array.Empty<string>();
-
-    /// <summary>True when the current scan is a full folder scan (not rescan-flagged).</summary>
-    public bool IsFullScan { get; init; }
 
     /// <summary>
     /// Resolves the folder to operate on: the input when it's a directory, or its
@@ -73,21 +80,8 @@ public sealed class ConfigurationCheckContext
     }
 }
 
-/// <summary>
-/// A collection-scope check that mashes up the filesystem with external state
-/// (e.g. a database) rather than diving into individual table contents.
-/// </summary>
-public interface IConfigurationCheck
+/// <summary>A rule that inspects the whole scanned collection once.</summary>
+public interface ICollectionRule : IInspectionRule
 {
-    /// <summary>Stable identifier, e.g. "pinup-game-match".</summary>
-    string Id { get; }
-
-    /// <summary>Human-readable description for the UI and reports.</summary>
-    string Description { get; }
-
-    /// <summary>Whether the check is enabled (per its settings).</summary>
-    bool Enabled { get; }
-
-    /// <summary>Runs the check and returns a renderable result.</summary>
-    ConfigurationCheckResult Run(ConfigurationCheckContext context);
+    IEnumerable<Finding> Evaluate(CollectionContext context);
 }

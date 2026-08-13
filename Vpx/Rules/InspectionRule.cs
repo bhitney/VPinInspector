@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace VPX_Inspector.Vpx.Rules;
+namespace VPin.Inspector.Vpx.Rules;
 
 /// <summary>
 /// The root object deserialized from rules.json.
@@ -249,4 +249,11 @@ public sealed class InspectionRule
     /// </summary>
     [JsonPropertyName("suggest")]
     public int? Suggest { get; init; }
+
+    /// <summary>
+    /// Severity reported when this rule matches: "info", "warning", or "error"
+    /// (case-insensitive). Defaults to "warning" when omitted or unrecognized.
+    /// </summary>
+    [JsonPropertyName("severity")]
+    public string? Severity { get; init; }
 }

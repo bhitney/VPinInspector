@@ -1,0 +1,253 @@
+using System.Diagnostics;
+using System.Text.RegularExpressions;
+using VPin.Inspector.Core.Platforms;
+using VPin.Inspector.Core.Reporting;
+using VPin.Inspector.Core.Rules;
+
+namespace VPin.Inspector.Core;
+
+/// <summary>
+/// Options controlling a scan: rule selection, exclude globs, an optional
+/// wall-clock budget, and an optional explicit file set (for "rescan flagged").
+/// </summary>
+public sealed class ScanOptions
+{
+    /// <summary>Per-run rule selection; null honors each rule's EnabledByDefault.</summary>
+    public IReadOnlySet<string>? SelectedRuleIds { get; init; }
+
+    /// <summary>File-name globs to exclude from folder discovery.</summary>
+    public IReadOnlyList<string> ExcludePatterns { get; init; } = Array.Empty<string>();
+
+    /// <summary>Optional wall-clock budget in seconds; zero/absent = no limit.</summary>
+    public double MaxRunTimeSeconds { get; init; }
+
+    /// <summary>
+    /// When set, exactly these files are scanned (folder discovery is skipped).
+    /// Used to rescan a subset such as the previously-flagged tables.
+    /// </summary>
+    public IReadOnlyList<string>? ExplicitFiles { get; init; }
+
+    /// <summary>
+    /// When false, collection rules are skipped (they need the full collection).
+    /// </summary>
+    public bool RunCollectionRules { get; init; } = true;
+}
+
+/// <summary>
+/// Scope-agnostic engine that replaces the VPX-specific TableScanService. Loads
+/// each table once through its platform, runs the selected table rules per-table
+/// (streaming results back), then the selected collection rules over the whole
+/// set, returning a structured <see cref="ScanReport"/>.
+/// </summary>
+public sealed class InspectionService
+{
+    private readonly InspectionRegistry _registry;
+
+    public InspectionService(InspectionRegistry registry) => _registry = registry;
+
+    /// <summary>Resolves the files a scan would cover for the given input/options.</summary>
+    public IReadOnlyList<string> ResolveFiles(string inputPath, ScanOptions? options = null)
+    {
+        options ??= new ScanOptions();
+
+        if (options.ExplicitFiles is not null)
+        {
+            return options.ExplicitFiles;
+        }
+
+        Regex? exclude = BuildExcludeRegex(options.ExcludePatterns);
+
+        if (Directory.Exists(inputPath))
+        {
+            var extensions = _registry.AllFileExtensions
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            return Directory
+                .EnumerateFiles(inputPath, "*.*", SearchOption.AllDirectories)
+                .Where(f => extensions.Contains(Path.GetExtension(f)))
+                .Where(f => exclude is null || !exclude.IsMatch(Path.GetFileName(f)))
+                .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        if (File.Exists(inputPath))
+        {
+            return new[] { inputPath };
+        }
+
+        return Array.Empty<string>();
+    }
+
+    /// <summary>
+    /// Scans an input path into a <see cref="ScanReport"/>. Invokes
+    /// <paramref name="onTable"/> after each table so callers can stream output
+    /// or update a UI. Honors cancellation and the optional time budget.
+    /// </summary>
+    public ScanReport Scan(
+        string inputPath,
+        ScanOptions? options = null,
+        Action<TableReport, int, int>? onTable = null,
+        CancellationToken cancellationToken = default)
+    {
+        options ??= new ScanOptions();
+
+        var files = ResolveFiles(inputPath, options);
+        var tableReports = new List<TableReport>(files.Count);
+        var contexts = new List<TableContext>(files.Count);
+
+        Stopwatch? stopwatch = options.MaxRunTimeSeconds > 0
+            ? Stopwatch.StartNew()
+            : null;
+
+        for (int i = 0; i < files.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            TableReport report = ScanSingle(files[i], options.SelectedRuleIds, out TableContext? context);
+            tableReports.Add(report);
+            if (context is not null)
+            {
+                contexts.Add(context);
+            }
+
+            onTable?.Invoke(report, i + 1, files.Count);
+
+            if (stopwatch is not null && stopwatch.Elapsed.TotalSeconds >= options.MaxRunTimeSeconds)
+            {
+                break;
+            }
+        }
+
+        var collectionGroups = new List<CollectionFindingGroup>();
+        if (options.RunCollectionRules)
+        {
+            var collectionContext = new CollectionContext
+            {
+                InputPath = inputPath,
+                Tables = contexts,
+                Platforms = _registry.Platforms,
+                ExcludePatterns = options.ExcludePatterns,
+            };
+
+            foreach (ICollectionRule rule in _registry.CollectionRules)
+            {
+                if (!IsSelected(rule, options.SelectedRuleIds))
+                {
+                    continue;
+                }
+
+                var findings = rule.Evaluate(collectionContext).ToList();
+                collectionGroups.Add(new CollectionFindingGroup
+                {
+                    RuleId = rule.Id,
+                    Description = rule.Description,
+                    Findings = findings,
+                });
+            }
+        }
+
+        return new ScanReport
+        {
+            InputPath = inputPath,
+            Tables = tableReports,
+            CollectionFindings = collectionGroups,
+        };
+    }
+
+    private TableReport ScanSingle(
+        string filePath,
+        IReadOnlySet<string>? selectedRuleIds,
+        out TableContext? context)
+    {
+        context = null;
+        string tableName = Path.GetFileName(filePath);
+
+        IPinballPlatform? platform = _registry.ResolvePlatform(filePath);
+        if (platform is null)
+        {
+            return new TableReport
+            {
+                TableName = tableName,
+                FilePath = filePath,
+                Failed = true,
+                Error = "No registered platform can read this file.",
+            };
+        }
+
+        try
+        {
+            var table = platform.Load(filePath);
+            var ctx = new TableContext { Platform = platform, Table = table };
+            context = ctx;
+
+            var findings = new List<Finding>();
+            foreach (ITableRule rule in _registry.TableRules)
+            {
+                if (!IsSelected(rule, selectedRuleIds))
+                {
+                    continue;
+                }
+
+                // Platform gate: empty SupportedPlatforms = agnostic.
+                if (rule.SupportedPlatforms.Count > 0 &&
+                    !rule.SupportedPlatforms.Contains(platform.Id))
+                {
+                    continue;
+                }
+
+                findings.AddRange(rule.Evaluate(ctx));
+            }
+
+            return new TableReport
+            {
+                TableName = tableName,
+                FilePath = filePath,
+                Failed = false,
+                GameName = table.GameName ?? Path.GetFileNameWithoutExtension(filePath),
+                Table = table,
+                Findings = findings,
+            };
+        }
+        catch (Exception ex)
+        {
+            return new TableReport
+            {
+                TableName = tableName,
+                FilePath = filePath,
+                Failed = true,
+                Error = ex.Message,
+            };
+        }
+    }
+
+    private static Regex? BuildExcludeRegex(IReadOnlyList<string> patterns)
+    {
+        if (patterns.Count == 0)
+        {
+            return null;
+        }
+
+        string combined = string.Join(
+            "|",
+            patterns
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Select(GlobToRegex));
+
+        return combined.Length == 0
+            ? null
+            : new Regex(combined, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    private static string GlobToRegex(string glob)
+    {
+        string escaped = Regex.Escape(glob)
+            .Replace("\\*", ".*")
+            .Replace("\\?", ".");
+        return $"^(?:{escaped})$";
+    }
+
+    private static bool IsSelected(IInspectionRule rule, IReadOnlySet<string>? selectedRuleIds) =>
+        selectedRuleIds is not null
+            ? selectedRuleIds.Contains(rule.Id)
+            : rule.EnabledByDefault;
+}

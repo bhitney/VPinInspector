@@ -1,7 +1,10 @@
-﻿using System.Runtime.InteropServices;
-using VPX_Inspector.UI;
-using VPX_Inspector.Vpx;
-using VPX_Inspector.Vpx.Rules;
+using System.Runtime.InteropServices;
+using VPin.Inspector.Core;
+using VPin.Inspector.Core.Reporting;
+using VPin.Inspector.Platforms.Vpx;
+using VPin.Inspector.Platforms.Vpx.Reporting;
+using VPin.Inspector.UI;
+using VPin.Inspector.Vpx.Rules;
 
 // Help flag -> print usage and exit, regardless of other args.
 if (args.Any(a => a is "-h" or "--help" or "-help" or "/?"))
@@ -30,12 +33,12 @@ return RunConsole(args);
 
 static void PrintUsage()
 {
-    Console.WriteLine("VPX Inspector - inspect Visual Pinball tables and PinUP Popper configuration.");
+    Console.WriteLine("VPin Inspector - inspect Visual Pinball tables and PinUP Popper configuration.");
     Console.WriteLine();
     Console.WriteLine("Usage:");
-    Console.WriteLine("  VPX Inspector                         Launch the GUI (Windows only).");
-    Console.WriteLine("  VPX Inspector <path> [rules.json]     Scan a .vpx file or folder from the console.");
-    Console.WriteLine("  VPX Inspector -h | --help             Show this help.");
+    Console.WriteLine("  VPin Inspector                         Launch the GUI (Windows only).");
+    Console.WriteLine("  VPin Inspector <path> [rules.json]     Scan a .vpx file or folder from the console.");
+    Console.WriteLine("  VPin Inspector -h | --help             Show this help.");
     Console.WriteLine();
     Console.WriteLine("Arguments:");
     Console.WriteLine("  <path>        Path to a .vpx file or a folder containing .vpx files.");
@@ -59,19 +62,19 @@ static int RunConsole(string[] args)
     }
 
     RuleEngine engine = RuleEngine.LoadFromFile(rulesPath);
-    var service = new TableScanService(engine);
+    InspectionRegistry registry = VpxRegistryFactory.Build(engine);
+    var service = new InspectionService(registry);
 
-    IReadOnlyList<string> vpxFiles = TableScanService.ResolveVpxFiles(
-        inputPath, out string? error, engine.Settings.ExcludePatterns);
-    if (error is not null)
+    var options = new ScanOptions
     {
-        Console.WriteLine(error);
-        return 1;
-    }
+        ExcludePatterns = engine.Settings.ExcludePatterns,
+        MaxRunTimeSeconds = engine.Settings.MaxRunTimeSeconds,
+    };
 
+    IReadOnlyList<string> vpxFiles = service.ResolveFiles(inputPath, options);
     if (vpxFiles.Count == 0)
     {
-        Console.WriteLine($"No .vpx files found at '{inputPath}'.");
+        Console.WriteLine($"No tables found at '{inputPath}'.");
         return 1;
     }
 
@@ -87,40 +90,16 @@ static int RunConsole(string[] args)
     }
     Console.WriteLine();
 
-    // Skip the per-table scan entirely when no deep-analysis rules are enabled.
-    bool anyRuleEnabled = engine.Rules.Any(r => r.Enabled);
-    IReadOnlyList<TableResult> results;
-    if (anyRuleEnabled)
-    {
-        results = service.ScanFiles(
-            vpxFiles,
-            onResult: (result, _, _) =>
-            {
-                Console.Write(ReportFormatter.FormatTableDetail(result));
-                Console.WriteLine();
-            });
+    ScanReport report = service.Scan(
+        inputPath,
+        options,
+        onTable: (table, _, _) =>
+        {
+            Console.Write(ReportRenderer.FormatTableDetail(table));
+            Console.WriteLine();
+        });
 
-        Console.WriteLine(ReportFormatter.FormatSummary(results));
-    }
-    else
-    {
-        results = Array.Empty<TableResult>();
-        Console.WriteLine("No deep-analysis rules enabled; skipping per-table scan.");
-    }
-
-    // Configuration (collection-scope) checks, e.g. PinUP game match.
-    var checkContext = new VPX_Inspector.Vpx.Checks.ConfigurationCheckContext
-    {
-        InputPath = inputPath,
-        ExcludePatterns = engine.Settings.ExcludePatterns,
-        IsFullScan = true,
-    };
-    var checkResults = VPX_Inspector.Vpx.Checks.ConfigurationCheckRunner.Run(
-        engine.Settings, checkContext);
-    foreach (var checkResult in checkResults)
-    {
-        Console.Write(ReportFormatter.FormatConfigurationCheck(checkResult));
-    }
+    Console.WriteLine(ReportRenderer.FormatSummary(report));
 
     return 0;
 }

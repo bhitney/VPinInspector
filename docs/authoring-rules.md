@@ -63,29 +63,33 @@ Adding a new **Configuration** check is a code task — see
 ```
 Program.cs                     Entry point. No args -> GUI; path arg -> console scan.
 rules.json                     Settings + configurationChecks + rules (the file you edit).
+Core/                          Platform-neutral inspection pipeline.
+  Model/                       TableElement (base), ITimerElement, PinballTable (base).
+  Platforms/IPinballPlatform.cs  Seam a new emulator implements.
+  Rules/                       Finding, ITableRule, ICollectionRule, TableContext, CollectionContext.
+  Reporting/ScanReport.cs      ScanReport + TableReport (per-table severity) + CollectionFindingGroup.
+  InspectionRegistry.cs        Central registration of platforms + rules.
+  InspectionService.cs         Resolves files, streams per-table results, produces a ScanReport.
+Platforms/Vpx/                 VPX platform adapter (one of potentially many).
+  Model/VpxGameItem.cs         VPX element (: TableElement, ITimerElement) + VpxItemType. Parses NAME/TMON/TMIN.
+  Model/VpxTable.cs            VPX table document (: PinballTable).
+  VpxPlatform.cs               Opens .vpx, produces a neutral VpxTable.
+  VpxRegistryFactory.cs        Wires the platform, rules.json rules, and opt-in modules.
+  Rules/                       DeclarativeElementRule (wraps rules.json), Dof/Pinup/VrRoom/DuplicateGameName rules.
+  Reporting/ReportRenderer.cs  Renders a ScanReport to text / severity-tagged lines.
 Vpx/
-  VpxCompoundFile.cs           Opens .vpx (OLE2/MS-CFB), reads GameItem + GameData streams.
+  VpxCompoundFile.cs           Opens .vpx (OLE2/MS-CFB), extracts the table script.
   BiffReader.cs                Parses BIFF records ([Int32 size][4-char tag][data]).
-  GameItem.cs                  Parsed element: Name, TypeName, TimerEnabled, TimerIntervalMs.
   ScriptAnalyzer.cs            Extracts cGameName from the table script.
   Rules/
 	InspectionRule.cs          Rule + settings schema (RuleSet, InspectionRule, InspectionSettings,
 							   ConfigurationChecksSettings, PinupMatchSettings).
 	IntervalCondition.cs       Parses "interval" strings (>=10, <10, >40, ==135, ...).
-	RuleEngine.cs              Loads rules.json, compiles name globs, evaluates each element.
-  Checks/                      Configuration (collection-scope) checks.
-	IConfigurationCheck.cs     Contract + ConfigurationCheckContext (folder + exclude-aware listing).
-	ConfigurationCheckResult.cs Generic result (SummaryLines + severity-tagged Sections).
-	ConfigurationCheckRunner.cs Registry: builds + runs the enabled checks.
+	RuleEngine.cs              Loads rules.json (rules + settings). Loader only.
   Pinup/
 	PinupDatabase.cs           Read-only SQLite access to PUPDatabase.db.
-	PinupGameMatchCheck.cs     "pinup-game-match" configuration check.
-	PinupMediaMatchCheck.cs    "media-match" configuration check.
-  TableScanService.cs          Resolves .vpx files, applies excludes/time budget, runs the engine.
-  TableResult.cs               Per-table outcome (matches, GameName, failure).
-  ReportFormatter.cs           Renders console/UI report + summary + configuration checks.
 UI/
-  MainForm.cs                  WinForms window: folder picker, rules tree, settings, output.
+  MainForm.cs                  WinForms window: folder picker, rules tree, settings, log + summary panes.
   AppUi.cs                     STA message-loop host for the GUI.
 ```
 
@@ -138,6 +142,9 @@ Each element exposes these to the matcher:
   "suggest": 40                  // optional. recommended interval; shown as
 								 //   "-> 40ms". -1 renders as "-1 (frame timer)".
 								 //   Advisory only; never written to the table.
+  ,"severity": "warning"         // optional. "info" | "warning" | "error"
+								 //   (case-insensitive). Default "warning".
+								 //   Drives the color in the summary pane.
 }
 ```
 

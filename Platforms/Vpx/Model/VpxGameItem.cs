@@ -1,4 +1,7 @@
-namespace VPX_Inspector.Vpx;
+using VPin.Inspector.Core.Model;
+using VPin.Inspector.Vpx; // reuse existing BiffReader
+
+namespace VPin.Inspector.Platforms.Vpx.Model;
 
 /// <summary>
 /// Known VPX element (GameItem) type identifiers, matching the leading Int32
@@ -32,30 +35,27 @@ public enum VpxItemType
 }
 
 /// <summary>
-/// A parsed VPX element with the fields relevant to timer inspection.
+/// VPX-specific element. Inherits the neutral <see cref="TableElement"/> and
+/// opts into the timer capability. This is the class that replaces the old
+/// flat GameItem; the parsing logic is a straight port of GameItem.Parse.
 /// </summary>
-public sealed class GameItem
+public sealed class VpxGameItem : TableElement, ITimerElement
 {
-    public required string StreamName { get; init; }
-
     public required int RawType { get; init; }
 
-    public string TypeName =>
+    public override string TypeName =>
         Enum.IsDefined(typeof(VpxItemType), RawType)
             ? ((VpxItemType)RawType).ToString()
             : $"Unknown({RawType})";
 
-    public string Name { get; init; } = string.Empty;
-
-    /// <summary>Whether the element's built-in timer is enabled (TMON).</summary>
     public bool TimerEnabled { get; init; }
 
-    /// <summary>The element's timer interval in milliseconds (TMIN). -1 when absent.</summary>
     public int TimerIntervalMs { get; init; } = -1;
 
-    public bool HasTimer => TimerIntervalMs >= 0;
-
-    public static GameItem Parse(string streamName, byte[] bytes)
+    /// <summary>
+    /// Ported from GameItem.Parse: reads NAME/TMON/TMIN from a GameItem stream.
+    /// </summary>
+    public static VpxGameItem Parse(string streamName, byte[] bytes)
     {
         var records = BiffReader.Read(bytes, out int itemType);
 
@@ -79,11 +79,11 @@ public sealed class GameItem
             }
         }
 
-        return new GameItem
+        return new VpxGameItem
         {
-            StreamName = streamName,
-            RawType = itemType,
+            Id = streamName,
             Name = name,
+            RawType = itemType,
             TimerEnabled = timerEnabled,
             TimerIntervalMs = timerInterval,
         };

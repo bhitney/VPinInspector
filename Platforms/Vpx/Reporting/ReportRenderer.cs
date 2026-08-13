@@ -1,0 +1,196 @@
+using System.Text;
+using VPin.Inspector.Core.Model;
+using VPin.Inspector.Core.Reporting;
+using VPin.Inspector.Core.Rules;
+
+namespace VPin.Inspector.Platforms.Vpx.Reporting;
+
+/// <summary>
+/// Renders a <see cref="ScanReport"/> to human-readable text for the console and
+/// UI. Replaces the legacy ReportFormatter; consumes only neutral Core types.
+/// </summary>
+public static class ReportRenderer
+{
+    /// <summary>Formats the detailed per-table block (header + grouped findings).</summary>
+    public static string FormatTableDetail(TableReport table)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine(new string('=', 90));
+        sb.AppendLine($"TABLE: {table.TableName}");
+        sb.AppendLine(new string('=', 90));
+
+        if (table.Failed)
+        {
+            sb.AppendLine($"  ERROR reading table: {table.Error ?? "unknown error"}");
+            return sb.ToString();
+        }
+
+        if (table.Findings.Count == 0)
+        {
+            sb.AppendLine("  No rule matches.");
+            return sb.ToString();
+        }
+
+        foreach (var group in table.Findings.GroupBy(f => f.RuleId))
+        {
+            sb.AppendLine($"  [{group.Key}]");
+            foreach (Finding finding in group)
+            {
+                string detail = DescribeElement(finding.Element);
+                sb.AppendLine(
+                    string.IsNullOrEmpty(detail)
+                        ? $"      - {finding.Message}"
+                        : $"      - {finding.Message}   {detail}");
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>Formats the end-of-run summary checklist, totals, and collection findings.</summary>
+    public static string FormatSummary(ScanReport report)
+    {
+        var sb = new StringBuilder();
+        foreach (RenderedLine line in BuildSummaryLines(report))
+        {
+            sb.AppendLine(line.Text);
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Builds the summary as severity-tagged lines. The console flattens these to
+    /// text; the UI colors them. This is the single source of truth for summary
+    /// content so both front-ends stay consistent.
+    /// </summary>
+    public static IReadOnlyList<RenderedLine> BuildSummaryLines(ScanReport report)
+    {
+        var lines = new List<RenderedLine>();
+        void Info(string t) => lines.Add(RenderedLine.Info(t));
+        void Line(FindingSeverity s, string t) => lines.Add(new RenderedLine(s, t));
+
+        Info(new string('#', 90));
+        Info("SUMMARY CHECKLIST");
+        Info(new string('#', 90));
+        Info(string.Empty);
+
+        IReadOnlyList<TableReport> results = report.Tables;
+        int flaggedTables = results.Count(r => r.IsFlagged);
+        int cleanTables = results.Count(r => r.IsClean);
+        int failedTables = results.Count(r => r.Failed);
+        int totalFindings = results.Sum(r => r.Findings.Count);
+
+        foreach (TableReport table in results.OrderBy(r => r.TableName, StringComparer.OrdinalIgnoreCase))
+        {
+            if (table.Failed)
+            {
+                Line(FindingSeverity.Error, $"[!] {table.TableName}  (could not be read)");
+                continue;
+            }
+
+            if (table.Findings.Count == 0)
+            {
+                continue; // clean tables omitted to reduce noise
+            }
+
+            // The table headline takes the table's overall (max) severity.
+            Line(table.Severity, $"[ ] {table.TableName}  ({table.Findings.Count} finding(s))");
+            foreach (var group in table.Findings.GroupBy(f => f.RuleId))
+            {
+                FindingSeverity groupSeverity = group.Max(f => f.Severity);
+                IEnumerable<string> names = group.Select(f =>
+                    f.Element is not null ? DescribeElementShort(f.Element) : f.Message);
+                Line(groupSeverity, $"      [ ] {group.Key}: {string.Join(", ", names)}");
+            }
+        }
+
+        Info(string.Empty);
+        Info(
+            $"Totals: {results.Count} table(s), {flaggedTables} flagged, {cleanTables} clean, " +
+            $"{failedTables} unreadable, {totalFindings} total finding(s).");
+
+        AppendUnreadableLines(lines, results);
+        AppendCollectionFindingLines(lines, report.CollectionFindings);
+
+        return lines;
+    }
+
+    private static void AppendUnreadableLines(List<RenderedLine> lines, IReadOnlyList<TableReport> results)
+    {
+        var unreadable = results
+            .Where(r => r.Failed)
+            .OrderBy(r => r.TableName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (unreadable.Count == 0)
+        {
+            return;
+        }
+
+        lines.Add(RenderedLine.Info(string.Empty));
+        lines.Add(RenderedLine.Info(new string('#', 90)));
+        lines.Add(RenderedLine.Info($"UNREADABLE TABLES ({unreadable.Count}) - please verify manually"));
+        lines.Add(RenderedLine.Info(new string('#', 90)));
+        lines.Add(RenderedLine.Info(string.Empty));
+
+        foreach (TableReport table in unreadable)
+        {
+            lines.Add(new RenderedLine(FindingSeverity.Error, $"[!] {table.TableName}"));
+            lines.Add(new RenderedLine(FindingSeverity.Error, $"      {table.FilePath}"));
+        }
+    }
+
+    private static void AppendCollectionFindingLines(
+        List<RenderedLine> lines, IReadOnlyList<CollectionFindingGroup> groups)
+    {
+        foreach (CollectionFindingGroup group in groups)
+        {
+            lines.Add(RenderedLine.Info(string.Empty));
+            lines.Add(RenderedLine.Info(new string('#', 90)));
+            lines.Add(RenderedLine.Info(group.Description));
+            lines.Add(RenderedLine.Info(new string('#', 90)));
+            lines.Add(RenderedLine.Info(string.Empty));
+
+            if (group.Findings.Count == 0)
+            {
+                lines.Add(RenderedLine.Info("    (no issues)"));
+                continue;
+            }
+
+            foreach (Finding finding in group.Findings)
+            {
+                string tag = finding.Severity switch
+                {
+                    FindingSeverity.Error => "[ERROR]",
+                    FindingSeverity.Warning => "[WARN]",
+                    _ => "[INFO]",
+                };
+                lines.Add(new RenderedLine(finding.Severity, $"    {tag} {finding.Message}"));
+            }
+        }
+    }
+
+    private static string DescribeElement(TableElement? element)
+    {
+        if (element is null)
+        {
+            return string.Empty;
+        }
+
+        string interval = element is ITimerElement { HasTimer: true } timer
+            ? $"{timer.TimerIntervalMs}ms"
+            : "no timer";
+        return $"[{element.TypeName}] {interval} ({element.Id})";
+    }
+
+    private static string DescribeElementShort(TableElement element)
+    {
+        if (element is ITimerElement { HasTimer: true } timer)
+        {
+            return $"{element.Name} [{element.TypeName}] ({timer.TimerIntervalMs}ms)";
+        }
+
+        return $"{element.Name} [{element.TypeName}]";
+    }
+}

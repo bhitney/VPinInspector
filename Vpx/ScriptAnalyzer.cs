@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace VPX_Inspector.Vpx;
+namespace VPin.Inspector.Vpx;
 
 /// <summary>
 /// Lightweight parsing of a table's VBScript for values of interest.

@@ -1,58 +1,14 @@
 using OpenMcdf;
 
-namespace VPX_Inspector.Vpx;
+namespace VPin.Inspector.Vpx;
 
 /// <summary>
 /// Opens a .vpx file (an OLE2 / MS-CFB compound file) directly and reads the
-/// element streams from the GameStg storage — no manual extraction required.
+/// script from the GameStg storage. Element parsing now lives in the VPX
+/// platform adapter (VpxPlatform); this retains only script extraction.
 /// </summary>
 public static class VpxCompoundFile
 {
-    /// <summary>
-    /// Parses every GameItem stream inside the .vpx compound file.
-    /// </summary>
-    /// <param name="vpxFilePath">Full path to the .vpx file.</param>
-    public static IReadOnlyList<GameItem> ScanGameItems(string vpxFilePath)
-    {
-        var items = new List<GameItem>();
-
-        using var root = RootStorage.OpenRead(vpxFilePath);
-        Storage gameStg = root.OpenStorage("GameStg");
-
-        foreach (var entry in gameStg.EnumerateEntries())
-        {
-            if (entry.Type != EntryType.Stream ||
-                !entry.Name.StartsWith("GameItem", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            using CfbStream stream = gameStg.OpenStream(entry.Name);
-            byte[] bytes = new byte[stream.Length];
-            stream.ReadExactly(bytes);
-
-            items.Add(GameItem.Parse(entry.Name, bytes));
-        }
-
-        return items;
-    }
-
-    /// <summary>
-    /// Returns timer-bearing elements, shortest interval first.
-    /// </summary>
-    public static IReadOnlyList<GameItem> FindTimers(string vpxFilePath) =>
-        ScanGameItems(vpxFilePath)
-            .Where(i => i.HasTimer)
-            .OrderBy(i => i.TimerIntervalMs)
-            .ToList();
-
-    /// <summary>
-    /// Finds a specific element by (case-insensitive) name.
-    /// </summary>
-    public static GameItem? FindByName(string vpxFilePath, string name) =>
-        ScanGameItems(vpxFilePath)
-            .FirstOrDefault(i => string.Equals(i.Name, name, StringComparison.OrdinalIgnoreCase));
-
     /// <summary>
     /// Extracts the table's VBScript from the GameData stream's <c>CODE</c> BIFF
     /// record. Returns an empty string when no script is present.

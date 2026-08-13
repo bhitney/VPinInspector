@@ -3,12 +3,14 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
 using System.Windows.Forms;
-using VPX_Inspector.Vpx;
-using VPX_Inspector.Vpx.Checks;
-using VPX_Inspector.Vpx.Dof;
-using VPX_Inspector.Vpx.Rules;
+using VPin.Inspector.Core;
+using VPin.Inspector.Core.Reporting;
+using VPin.Inspector.Core.Rules;
+using VPin.Inspector.Platforms.Vpx;
+using VPin.Inspector.Platforms.Vpx.Reporting;
+using VPin.Inspector.Vpx.Rules;
 
-namespace VPX_Inspector.UI;
+namespace VPin.Inspector.UI;
 
 /// <summary>
 /// Simple inspector window: pick a folder, scan all .vpx files, view the report
@@ -24,6 +26,7 @@ public sealed class MainForm : Form
     private readonly Button _reloadRulesButton;
     private readonly Button _cancelButton;
     private readonly RichTextBox _outputBox;
+    private readonly RichTextBox _summaryBox;
     private readonly TreeView _rulesTree;
     private readonly LinkLabel _openRulesLink;
     private readonly TextBox _excludeBox;
@@ -32,6 +35,7 @@ public sealed class MainForm : Form
     private readonly TextBox _dofConfigBox;
     private readonly ToolTip _toolTip = new();
     private readonly SplitContainer _split;
+    private readonly SplitContainer _outputSplit;
     private readonly Label _statusLabel;
     private readonly ProgressBar _progressBar;
 
@@ -41,7 +45,7 @@ public sealed class MainForm : Form
     private bool _suppressTreeCheck;
 
     // The most recent scan results, used to drive "rescan flagged".
-    private List<TableResult> _lastResults = new();
+    private List<TableReport> _lastResults = new();
     private CancellationTokenSource? _cts;
 
     // Maps checklist table-name link text to the full .vpx file path to open.
@@ -50,7 +54,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "VPX Inspector";
+        Text = "VPin Inspector";
         Font = new Font("Segoe UI", 9f);
         AutoScaleMode = AutoScaleMode.Dpi;
         MinimumSize = new Size(760, 540);
@@ -154,12 +158,77 @@ public sealed class MainForm : Form
         };
         _outputBox.LinkClicked += OnOutputLinkClicked;
 
+        _summaryBox = new RichTextBox
+        {
+            Dock = DockStyle.Fill,
+            ReadOnly = true,
+            ScrollBars = RichTextBoxScrollBars.Both,
+            WordWrap = false,
+            DetectUrls = false,
+            Font = new Font("Consolas", 9.5f),
+            BackColor = Color.White,
+        };
+        _summaryBox.LinkClicked += OnOutputLinkClicked;
+
+        // Right-hand side splits into a live log (top) and the clickable summary
+        // (bottom), so the streaming status stays separate from the actionable
+        // checklist.
+        var logLabel = new Label
+        {
+            Text = "Log:",
+            AutoSize = true,
+            Dock = DockStyle.Top,
+            Font = new Font(Font, FontStyle.Bold),
+            Padding = new Padding(0, 0, 0, 2),
+        };
+        var logPanel = new Panel { Dock = DockStyle.Fill };
+        logPanel.Controls.Add(_outputBox);
+        logPanel.Controls.Add(logLabel);
+
+        var summaryLabel = new Label
+        {
+            Text = "Summary:",
+            AutoSize = true,
+            Dock = DockStyle.Top,
+            Font = new Font(Font, FontStyle.Bold),
+            Padding = new Padding(0, 0, 0, 2),
+        };
+
+        // Colored severity legend so users learn the color scheme.
+        var legend = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            Padding = new Padding(0, 0, 0, 2),
+        };
+        legend.Controls.Add(MakeLegendItem("Error", Color.Firebrick));
+        legend.Controls.Add(MakeLegendItem("Warning", Color.DarkGoldenrod));
+        legend.Controls.Add(MakeLegendItem("Info", SystemColors.ControlText));
+
+        var summaryPanel = new Panel { Dock = DockStyle.Fill };
+        summaryPanel.Controls.Add(_summaryBox);
+        summaryPanel.Controls.Add(legend);
+        summaryPanel.Controls.Add(summaryLabel);
+
+        var outputSplit = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Horizontal,
+            SplitterWidth = 6,
+        };
+        outputSplit.Panel1.Controls.Add(logPanel);
+        outputSplit.Panel2.Controls.Add(summaryPanel);
+        _outputSplit = outputSplit;
+
         var outputHost = new Panel
         {
             Dock = DockStyle.Fill,
             Padding = new Padding(6, 6, 12, 6),
         };
-        outputHost.Controls.Add(_outputBox);
+        outputHost.Controls.Add(outputSplit);
 
         // Left-hand rules panel: header link + checkboxed tree of rules.
         var rulesPanel = new Panel
@@ -354,6 +423,15 @@ public sealed class MainForm : Form
         MinimumSize = new Size(90, 0),
     };
 
+    /// <summary>Builds a small colored swatch + label for the severity legend.</summary>
+    private static Label MakeLegendItem(string text, Color color) => new()
+    {
+        Text = "\u25A0 " + text,
+        ForeColor = color,
+        AutoSize = true,
+        Margin = new Padding(0, 0, 12, 0),
+    };
+
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
@@ -373,6 +451,26 @@ public sealed class MainForm : Form
             {
                 int distance = (int)(usable * 0.30);
                 _split.SplitterDistance = Math.Clamp(distance, min, max);
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // Leave the default splitter position if the window is too small.
+        }
+
+        // Give the log the top ~35% and the actionable summary the rest.
+        try
+        {
+            _outputSplit.Panel1MinSize = 80;
+            _outputSplit.Panel2MinSize = 120;
+
+            int usable = _outputSplit.Height - _outputSplit.SplitterWidth;
+            int min = _outputSplit.Panel1MinSize;
+            int max = usable - _outputSplit.Panel2MinSize;
+            if (max > min)
+            {
+                int distance = (int)(usable * 0.35);
+                _outputSplit.SplitterDistance = Math.Clamp(distance, min, max);
             }
         }
         catch (InvalidOperationException)
@@ -450,12 +548,13 @@ public sealed class MainForm : Form
 
         // Group 1: Configuration (collection-scope) checks.
         var configParent = new TreeNode("Configuration") { Tag = GroupTag };
-        foreach (IConfigurationCheck check in ConfigurationCheckRunner.BuildChecks(_engine.Settings))
+        InspectionRegistry registry = VpxRegistryFactory.Build(_engine);
+        foreach (ICollectionRule check in registry.CollectionRules)
         {
             var node = new TreeNode($"{check.Id}  —  {check.Description}")
             {
                 Tag = new CheckNodeTag(check.Id, IsConfiguration: true),
-                Checked = check.Enabled,
+                Checked = check.EnabledByDefault,
                 ToolTipText = check.Description,
             };
             configParent.Nodes.Add(node);
@@ -463,26 +562,16 @@ public sealed class MainForm : Form
 
         // Group 2: Deep Analysis (per-table) rules.
         var deepParent = new TreeNode("Deep Analysis") { Tag = GroupTag };
-        foreach (InspectionRule rule in _engine.Rules)
+        foreach (ITableRule rule in registry.TableRules)
         {
             var node = new TreeNode($"{rule.Id}  —  {rule.Description}")
             {
                 Tag = new CheckNodeTag(rule.Id, IsConfiguration: false),
-                Checked = rule.Enabled,
+                Checked = rule.EnabledByDefault,
                 ToolTipText = rule.Description,
             };
             deepParent.Nodes.Add(node);
         }
-
-        // Built-in DOF (DirectOutput) check: not a pattern rule, so it is added
-        // as a fixed node under Deep Analysis and driven by its reserved id.
-        var dofNode = new TreeNode($"{DofConfig.CheckId}  —  Game has a DirectOutput (DOF) config entry")
-        {
-            Tag = new CheckNodeTag(DofConfig.CheckId, IsConfiguration: false),
-            Checked = true,
-            ToolTipText = "Warns when a table's cGameName/ROM has no entry in the DOF config.",
-        };
-        deepParent.Nodes.Add(dofNode);
 
         _rulesTree.Nodes.Add(configParent);
         _rulesTree.Nodes.Add(deepParent);
@@ -601,7 +690,7 @@ public sealed class MainForm : Form
         {
             if (!File.Exists(_rulesPath))
             {
-                MessageBox.Show(this, $"Rules file not found at '{_rulesPath}'.", "VPX Inspector",
+                MessageBox.Show(this, $"Rules file not found at '{_rulesPath}'.", "VPin Inspector",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
@@ -612,7 +701,7 @@ public sealed class MainForm : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, $"Could not open rules file: {ex.Message}", "VPX Inspector",
+            MessageBox.Show(this, $"Could not open rules file: {ex.Message}", "VPin Inspector",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -624,7 +713,7 @@ public sealed class MainForm : Form
 
         if (!EnsureService())
         {
-            MessageBox.Show(this, _serviceError, "VPX Inspector", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, _serviceError, "VPin Inspector", MessageBoxButtons.OK, MessageBoxIcon.Error);
             _statusLabel.Text = "Rules failed to load.";
             return;
         }
@@ -641,160 +730,124 @@ public sealed class MainForm : Form
     {
         if (!EnsureService())
         {
-            MessageBox.Show(this, _serviceError, "VPX Inspector", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, _serviceError, "VPin Inspector", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return;
         }
 
         // Effective settings from the UI panel (overrides the file for this run).
         InspectionSettings settings = BuildSettingsFromUi();
+        InspectionRegistry registry = VpxRegistryFactory.Build(_engine!, settings);
+        var service = new InspectionService(registry);
+
+        string scanInput = _folderBox.Text.Trim();
 
         // Determine the set of files to scan.
         List<string> files;
-        string scanInput = _folderBox.Text.Trim();
         if (mode == ScanMode.FlaggedOnly)
         {
             files = _lastResults.Where(r => r.IsFlagged).Select(r => r.FilePath).ToList();
             if (files.Count == 0)
             {
-                MessageBox.Show(this, "No flagged tables to rescan.", "VPX Inspector",
+                MessageBox.Show(this, "No flagged tables to rescan.", "VPin Inspector",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
         }
         else
         {
-            string input = _folderBox.Text.Trim();
-            if (string.IsNullOrWhiteSpace(input))
+            if (string.IsNullOrWhiteSpace(scanInput))
             {
-                MessageBox.Show(this, "Please choose a tables folder first.", "VPX Inspector",
+                MessageBox.Show(this, "Please choose a tables folder first.", "VPin Inspector",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
-            IReadOnlyList<string> resolved = TableScanService.ResolveVpxFiles(
-                input, out string? error, settings.ExcludePatterns);
-            if (error is not null)
-            {
-                MessageBox.Show(this, error, "VPX Inspector", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
-            }
-
-            files = resolved.ToList();
+            files = service.ResolveFiles(
+                scanInput,
+                new ScanOptions { ExcludePatterns = settings.ExcludePatterns }).ToList();
             if (files.Count == 0)
             {
-                MessageBox.Show(this, $"No .vpx files found at '{input}'.", "VPX Inspector",
+                MessageBox.Show(this, $"No tables found at '{scanInput}'.", "VPin Inspector",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
         }
 
-        _cts = new CancellationTokenSource();
-        SetScanningState(true, files.Count);
-
-        // Build a service using the rules currently checked in the tree.
-        HashSet<string> enabledIds = GetEnabledRuleIds();
+        // Rules currently checked in the tree (table + collection ids combined).
+        HashSet<string> enabledRuleIds = GetEnabledRuleIds();
         HashSet<string> enabledCheckIds = mode == ScanMode.Full
             ? GetEnabledConfigurationCheckIds()
             : new HashSet<string>();
 
-        if (enabledIds.Count == 0 && enabledCheckIds.Count == 0)
+        if (enabledRuleIds.Count == 0 && enabledCheckIds.Count == 0)
         {
-            SetScanningState(false, 0);
-            _cts.Dispose();
-            _cts = null;
             MessageBox.Show(this, "Nothing selected. Check at least one rule or configuration check.",
-                "VPX Inspector", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                "VPin Inspector", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
-        var service = new TableScanService(_engine!, enabledIds, settings);
+        var selectedIds = new HashSet<string>(enabledRuleIds, StringComparer.OrdinalIgnoreCase);
+        selectedIds.UnionWith(enabledCheckIds);
+
+        var options = new ScanOptions
+        {
+            SelectedRuleIds = selectedIds,
+            ExcludePatterns = settings.ExcludePatterns,
+            MaxRunTimeSeconds = settings.MaxRunTimeSeconds,
+            ExplicitFiles = mode == ScanMode.FlaggedOnly ? files : null,
+            // Collection rules only make sense on a full folder scan.
+            RunCollectionRules = mode == ScanMode.Full,
+        };
+
+        _cts = new CancellationTokenSource();
+        SetScanningState(true, files.Count);
 
         string headerVerb = mode == ScanMode.FlaggedOnly ? "Rescanning flagged" : "Scanning";
         _outputBox.Clear();
+        _summaryBox.Clear();
+        AppendOutput(
+            $"{headerVerb} {files.Count} table(s) with {enabledRuleIds.Count} rule(s) enabled..." +
+            $"{Environment.NewLine}{Environment.NewLine}");
 
-        bool runDeepAnalysis = enabledIds.Count > 0;
-        if (runDeepAnalysis)
-        {
-            AppendOutput(
-                $"{headerVerb} {files.Count} table(s) with {enabledIds.Count} rule(s) enabled..." +
-                $"{Environment.NewLine}{Environment.NewLine}");
-        }
-        else
-        {
-            AppendOutput(
-                $"No deep-analysis rules selected; skipping per-table scan." +
-                $"{Environment.NewLine}{Environment.NewLine}");
-        }
-
-        var results = new List<TableResult>(files.Count);
-        var sb = new StringBuilder();
+        ScanReport? report = null;
 
         try
         {
-            // Per-table deep analysis only runs when deep-analysis rules are selected.
-            if (runDeepAnalysis)
-            {
-                await Task.Run(() =>
-                {
-                    service.ScanFiles(files, onResult: (result, done, total) =>
+            report = await Task.Run(() =>
+                service.Scan(
+                    scanInput,
+                    options,
+                    onTable: (table, done, total) =>
                     {
-                        results.Add(result);
-                        string detail = ReportFormatter.FormatTableDetail(result) + Environment.NewLine;
-
-                        // Marshal UI updates back to the UI thread.
+                        string detail = ReportRenderer.FormatTableDetail(table) + Environment.NewLine;
                         BeginInvoke(() =>
                         {
                             AppendOutput(detail);
                             _progressBar.Value = Math.Min(done, _progressBar.Maximum);
-                            _statusLabel.Text = $"{headerVerb}: {done}/{total}  ({result.TableName})";
+                            _statusLabel.Text = $"{headerVerb}: {done}/{total}  ({table.TableName})";
                         });
-                    }, _cts.Token);
-                }, _cts.Token);
+                    },
+                    _cts.Token),
+                _cts.Token);
 
-                // Append the summary and remember results for future rescans.
-                sb.Append(ReportFormatter.FormatSummary(results));
-            }
+            var results = report.Tables.ToList();
 
-            // Configuration (collection-scope) checks - full folder scans only.
-            if (mode == ScanMode.Full)
-            {
-                var checkContext = new ConfigurationCheckContext
-                {
-                    InputPath = scanInput,
-                    ExcludePatterns = settings.ExcludePatterns,
-                    IsFullScan = true,
-                };
-                HashSet<string> selectedCheckIds = enabledCheckIds;
-                var checkResults = ConfigurationCheckRunner.Run(settings, checkContext, selectedCheckIds);
-                foreach (var checkResult in checkResults)
-                {
-                    sb.Append(ReportFormatter.FormatConfigurationCheck(checkResult));
-                }
-            }
-
-            // Register clickable table-name links for flagged tables (only when
-            // a VPX executable is configured), then render the summary text and
-            // convert those table names into links.
             RegisterTableLinks(results);
-            AppendOutput(Environment.NewLine + sb);
+            WriteSummary(report);
             LinkifyTableNames();
+            AppendOutput($"{Environment.NewLine}Scan complete. See the Summary pane for results.{Environment.NewLine}");
 
-            // Only update retained results when a per-table scan actually ran.
-            if (runDeepAnalysis)
-            {
-                MergeResults(mode, results);
-                _statusLabel.Text = BuildStatusSummary();
-            }
-            else
-            {
-                _statusLabel.Text = "Configuration checks complete.";
-            }
+            MergeResults(mode, results);
+            _statusLabel.Text = BuildStatusSummary();
         }
         catch (OperationCanceledException)
         {
             AppendOutput($"{Environment.NewLine}Scan cancelled.{Environment.NewLine}");
             _statusLabel.Text = "Scan cancelled.";
-            MergeResults(mode, results);
+            if (report is not null)
+            {
+                MergeResults(mode, report.Tables.ToList());
+            }
         }
         catch (Exception ex)
         {
@@ -813,7 +866,7 @@ public sealed class MainForm : Form
     /// Updates the retained result set. A full scan replaces it; a flagged-only
     /// rescan updates just those entries in place.
     /// </summary>
-    private void MergeResults(ScanMode mode, List<TableResult> results)
+    private void MergeResults(ScanMode mode, List<TableReport> results)
     {
         if (mode == ScanMode.Full)
         {
@@ -824,7 +877,7 @@ public sealed class MainForm : Form
             var byPath = results.ToDictionary(r => r.FilePath, StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i < _lastResults.Count; i++)
             {
-                if (byPath.TryGetValue(_lastResults[i].FilePath, out TableResult? updated))
+                if (byPath.TryGetValue(_lastResults[i].FilePath, out TableReport? updated))
                 {
                     _lastResults[i] = updated;
                 }
@@ -875,11 +928,84 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
+    /// Writes the summary into the summary pane. Only a leading severity tag
+    /// (e.g. "[ERROR]" / "[WARN]") is colored; the rest of the line stays in the
+    /// default color for readability.
+    /// </summary>
+    private void WriteSummary(ScanReport report)
+    {
+        Color defaultColor = _summaryBox.ForeColor;
+
+        foreach (RenderedLine line in ReportRenderer.BuildSummaryLines(report))
+        {
+            Color tagColor = line.Severity switch
+            {
+                FindingSeverity.Error => Color.Firebrick,
+                FindingSeverity.Warning => Color.DarkGoldenrod,
+                _ => defaultColor,
+            };
+
+            AppendSummaryLine(line.Text, tagColor, defaultColor);
+        }
+
+        _summaryBox.SelectionColor = defaultColor;
+    }
+
+    /// <summary>
+    /// Appends one summary line, coloring only a leading "[TAG]" span (when the
+    /// line starts with one, after optional leading whitespace) in
+    /// <paramref name="tagColor"/> and the remainder in <paramref name="defaultColor"/>.
+    /// </summary>
+    private void AppendSummaryLine(string text, Color tagColor, Color defaultColor)
+    {
+        int tagEnd = -1;
+        int i = 0;
+        while (i < text.Length && char.IsWhiteSpace(text[i]))
+        {
+            i++;
+        }
+
+        if (i < text.Length && text[i] == '[')
+        {
+            int close = text.IndexOf(']', i);
+            if (close > i)
+            {
+                // Only treat known severity tags as colorable (not the "[ ]"
+                // checklist checkbox markers).
+                string inner = text[(i + 1)..close].Trim();
+                if (inner is "ERROR" or "WARN" or "WARNING" or "INFO")
+                {
+                    tagEnd = close + 1;
+                }
+            }
+        }
+
+        _summaryBox.SelectionStart = _summaryBox.TextLength;
+        _summaryBox.SelectionLength = 0;
+
+        if (tagEnd > 0 && tagColor != defaultColor)
+        {
+            _summaryBox.SelectionColor = tagColor;
+            _summaryBox.AppendText(text[..tagEnd]);
+
+            _summaryBox.SelectionStart = _summaryBox.TextLength;
+            _summaryBox.SelectionLength = 0;
+            _summaryBox.SelectionColor = defaultColor;
+            _summaryBox.AppendText(text[tagEnd..] + Environment.NewLine);
+        }
+        else
+        {
+            _summaryBox.SelectionColor = defaultColor;
+            _summaryBox.AppendText(text + Environment.NewLine);
+        }
+    }
+
+    /// <summary>
     /// Rebuilds the map of clickable table names to their full .vpx paths. Only
     /// flagged tables are registered, and only when a VPX executable is
     /// configured (otherwise nothing is made clickable).
     /// </summary>
-    private void RegisterTableLinks(IReadOnlyList<TableResult> results)
+    private void RegisterTableLinks(IReadOnlyList<TableReport> results)
     {
         _tableLinkPaths.Clear();
 
@@ -888,7 +1014,7 @@ public sealed class MainForm : Form
             return;
         }
 
-        foreach (TableResult result in results)
+        foreach (TableReport result in results)
         {
             if (result.IsFlagged && !string.IsNullOrEmpty(result.FilePath))
             {
@@ -908,9 +1034,9 @@ public sealed class MainForm : Form
             return;
         }
 
-        int originalStart = _outputBox.SelectionStart;
-        int originalLength = _outputBox.SelectionLength;
-        string text = _outputBox.Text;
+        int originalStart = _summaryBox.SelectionStart;
+        int originalLength = _summaryBox.SelectionLength;
+        string text = _summaryBox.Text;
 
         foreach (string tableName in _tableLinkPaths.Keys)
         {
@@ -925,13 +1051,13 @@ public sealed class MainForm : Form
                 }
 
                 int nameStart = idx + "[ ] ".Length;
-                _outputBox.Select(nameStart, tableName.Length);
+                _summaryBox.Select(nameStart, tableName.Length);
                 SetSelectionLink(true);
                 searchFrom = nameStart + tableName.Length;
             }
         }
 
-        _outputBox.Select(originalStart, originalLength);
+        _summaryBox.Select(originalStart, originalLength);
     }
 
     /// <summary>Launches the configured VPX executable to edit the clicked table.</summary>
@@ -947,7 +1073,7 @@ public sealed class MainForm : Form
         {
             MessageBox.Show(this,
                 "The configured VPX executable path is empty or does not exist. Set it in the Settings panel.",
-                "VPX Inspector", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                "VPin Inspector", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -963,7 +1089,7 @@ public sealed class MainForm : Form
         catch (Exception ex)
         {
             MessageBox.Show(this, $"Failed to open the table in VPX:{Environment.NewLine}{ex.Message}",
-                "VPX Inspector", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                "VPin Inspector", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -1014,6 +1140,6 @@ public sealed class MainForm : Form
             dwEffects = link ? CFE_LINK : 0,
         };
 
-        SendMessage(_outputBox.Handle, EM_SETCHARFORMAT, (IntPtr)SCF_SELECTION, ref cf);
+        SendMessage(_summaryBox.Handle, EM_SETCHARFORMAT, (IntPtr)SCF_SELECTION, ref cf);
     }
 }
