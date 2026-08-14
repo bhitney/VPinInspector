@@ -8,13 +8,14 @@ namespace VPin.Inspector.Platforms.Vpx.Rules;
 /// <summary>
 /// Opt-in DEEP collection rule that extends the PinUP game match: for each table
 /// present both on disk and in the PinUP Popper database, it compares the values
-/// inferred from / parsed out of the table (cGameName as ROM, plus the
-/// manufacturer and year parsed from the file name) against what Popper records
-/// (ROM, Manufact, GameYear). Mismatches usually mean the database (or the file
-/// name) carries stale or inaccurate information.
+/// inferred from / parsed out of the table (cGameName as ROM, the manufacturer
+/// and year parsed from the file name, and the version embedded in the file)
+/// against what Popper records (ROM, Manufact, GameYear, GAMEVER). Mismatches
+/// usually mean the database (or the file name) carries stale or inaccurate
+/// information.
 ///
-/// Deep because it needs each table's parsed cGameName, so tables must be fully
-/// loaded (not shallow).
+/// Deep because it needs each table's parsed cGameName and embedded metadata, so
+/// tables must be fully loaded (not shallow).
 /// </summary>
 public sealed class PinupMetadataCheckRule : ICollectionRule
 {
@@ -119,6 +120,14 @@ public sealed class PinupMetadataCheckRule : ICollectionRule
                 "year",
                 table.NameInfo.Year?.ToString(),
                 row.Year);
+            // Versions are free-form ("1.2", "test 1", "RC2"), so a plain trimmed
+            // string comparison is intentionally used rather than numeric parsing.
+            CompareField(
+                findings,
+                table.TableName,
+                "version",
+                table.EmbeddedFileVersion,
+                row.Version);
         }
 
         return findings;

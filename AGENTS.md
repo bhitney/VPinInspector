@@ -63,6 +63,7 @@ Platforms/Vpx/                     VPX platform adapter (lives in the app projec
 	WellFormedNameRule.cs          ITableRule (Quick): flags names not matching "Name (Manufacturer Year)".
 	DofLookupRule.cs               Opt-in ICollectionRule (Deep): table ROM vs DOF config.
 	PinupGameMatchRule.cs          Opt-in ICollectionRule (Quick): folder vs PinUP DB games.
+	PinupMetadataCheckRule.cs      Opt-in ICollectionRule (Deep): ROM/manufacturer/year/version vs PinUP DB.
 	PinupMediaMatchRule.cs         Opt-in ICollectionRule (Quick): PinUP media presence per media folder.
 	VrRoomMatchRule.cs             Opt-in ICollectionRule (Quick): "VR ROOM x" has a base "x".
 	DuplicateGameNameRule.cs       ICollectionRule (Deep): 2+ tables sharing a cGameName.
@@ -72,11 +73,11 @@ Platforms/Vpx/                     VPX platform adapter (lives in the app projec
 	ReportRenderer.cs              ScanReport -> text (console) / RenderedLine[] (UI colors).
 
 Vpx/                               Legacy VPX helpers (still used by the adapter)
-  VpxCompoundFile.cs               Opens .vpx, extracts the table VBScript (GetScript only now).
+  VpxCompoundFile.cs               Opens .vpx: GetScript (VBScript) + GetTableInfo (embedded TableName/Author/Version).
   BiffReader.cs                    Parses BIFF records ([Int32 size][4-char tag][data]).
   ScriptAnalyzer.cs                Extracts cGameName from the table script.
   Dof/DofConfig.cs                 Parses DOF .ini; HasRom(...) with base/prefix fallbacks.
-  Pinup/PinupDatabase.cs           Read-only SQLite access to PUPDatabase.db.
+  Pinup/PinupDatabase.cs           Read-only SQLite access to PUPDatabase.db (games, media, metadata).
   Rules/
 	InspectionRule.cs              rules.json schema (RuleSet, InspectionRule, InspectionSettings, *Settings).
 	IntervalCondition.cs           Parses "interval" strings (>=10, <10, >40, ==135, ...).
