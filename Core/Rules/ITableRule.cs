@@ -18,6 +18,25 @@ public sealed class TableContext
 }
 
 /// <summary>
+/// How expensive a rule is to evaluate, which controls how much of each table
+/// the core must parse before running it.
+/// <list type="bullet">
+/// <item><see cref="Quick"/> — needs only cheap facts (file names, folder
+/// listings, external databases). No table body parse required.</item>
+/// <item><see cref="Deep"/> — must fully parse each table (its elements and/or
+/// script, e.g. cGameName), which is slow.</item>
+/// </list>
+/// This axis is independent of rule scope: a collection rule can be Deep
+/// (duplicate-game-name reads cGameName) and a table rule can be Quick
+/// (well-formed-name only reads the file name).
+/// </summary>
+public enum AnalysisDepth
+{
+    Quick,
+    Deep,
+}
+
+/// <summary>
 /// Common metadata shared by every rule/module. A rule is enabled or disabled
 /// independently, so nobody is forced to run DOF, PinUP, VPS, etc.
 /// </summary>
@@ -28,6 +47,13 @@ public interface IInspectionRule
 
     /// <summary>Human-readable description for UI and reports.</summary>
     string Description { get; }
+
+    /// <summary>
+    /// How much table parsing this rule requires. Quick rules can run without a
+    /// full table parse; a scan that selects only Quick rules skips the
+    /// expensive load entirely.
+    /// </summary>
+    AnalysisDepth Depth { get; }
 
     /// <summary>
     /// Whether this rule runs by default. Combined with per-run selection so a

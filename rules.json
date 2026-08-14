@@ -13,6 +13,14 @@
         "matchEmulatorsByFolder": true,
         "visibleOnly": false
       },
+      "pinup-metadata-check": {
+        "enabled": true,
+        "respectExcludePatterns": false,
+        "databasePath": "C:\\vPinball\\PinUPSystem\\PUPDatabase.db",
+        "emulatorIds": [],
+        "matchEmulatorsByFolder": true,
+        "visibleOnly": false
+      },
       "media-match": {
         "enabled": true,
         "respectExcludePatterns": false,

@@ -546,40 +546,45 @@ public sealed class MainForm : Form
             return;
         }
 
-        // Group 1: Configuration (collection-scope) checks.
-        var configParent = new TreeNode("Configuration") { Tag = GroupTag };
+        // Rules are grouped by analysis cost, not by scope: "Quick" rules only
+        // read file names / listings / databases; "Deep Analysis" rules must fully
+        // parse each .vpx. A rule's IsConfiguration flag (collection vs table)
+        // still drives selection routing, independent of which group it shows in.
         InspectionRegistry registry = VpxRegistryFactory.Build(_engine);
-        foreach (ICollectionRule check in registry.CollectionRules)
-        {
-            var node = new TreeNode($"{check.Id}  —  {check.Description}")
-            {
-                Tag = new CheckNodeTag(check.Id, IsConfiguration: true),
-                Checked = check.EnabledByDefault,
-                ToolTipText = check.Description,
-            };
-            configParent.Nodes.Add(node);
-        }
 
-        // Group 2: Deep Analysis (per-table) rules.
+        var quickParent = new TreeNode("Quick Checks") { Tag = GroupTag };
         var deepParent = new TreeNode("Deep Analysis") { Tag = GroupTag };
-        foreach (ITableRule rule in registry.TableRules)
+
+        void AddRule(IInspectionRule rule, bool isConfiguration)
         {
             var node = new TreeNode($"{rule.Id}  —  {rule.Description}")
             {
-                Tag = new CheckNodeTag(rule.Id, IsConfiguration: false),
+                Tag = new CheckNodeTag(rule.Id, IsConfiguration: isConfiguration),
                 Checked = rule.EnabledByDefault,
                 ToolTipText = rule.Description,
             };
-            deepParent.Nodes.Add(node);
+
+            TreeNode parent = rule.Depth == AnalysisDepth.Quick ? quickParent : deepParent;
+            parent.Nodes.Add(node);
         }
 
-        _rulesTree.Nodes.Add(configParent);
+        foreach (ICollectionRule check in registry.CollectionRules)
+        {
+            AddRule(check, isConfiguration: true);
+        }
+
+        foreach (ITableRule rule in registry.TableRules)
+        {
+            AddRule(rule, isConfiguration: false);
+        }
+
+        _rulesTree.Nodes.Add(quickParent);
         _rulesTree.Nodes.Add(deepParent);
 
         // Parent checkboxes reflect children and start expanded.
-        configParent.Checked = configParent.Nodes.Cast<TreeNode>().Any(n => n.Checked);
+        quickParent.Checked = quickParent.Nodes.Cast<TreeNode>().Any(n => n.Checked);
         deepParent.Checked = deepParent.Nodes.Cast<TreeNode>().Any(n => n.Checked);
-        configParent.Expand();
+        quickParent.Expand();
         deepParent.Expand();
 
         _rulesTree.EndUpdate();
@@ -805,8 +810,11 @@ public sealed class MainForm : Form
         string headerVerb = mode == ScanMode.FlaggedOnly ? "Rescanning flagged" : "Scanning";
         _outputBox.Clear();
         _summaryBox.Clear();
+        string budgetNote = options.MaxRunTimeSeconds > 0
+            ? $" (time budget: {options.MaxRunTimeSeconds:0.##}s — scan may stop early)"
+            : string.Empty;
         AppendOutput(
-            $"{headerVerb} {files.Count} table(s) with {enabledRuleIds.Count} rule(s) enabled..." +
+            $"{headerVerb} {files.Count} table(s) found with {selectedIds.Count} rule(s) enabled{budgetNote}..." +
             $"{Environment.NewLine}{Environment.NewLine}");
 
         ScanReport? report = null;
@@ -835,6 +843,14 @@ public sealed class MainForm : Form
             RegisterTableLinks(results);
             WriteSummary(report);
             LinkifyTableNames();
+
+            if (results.Count < files.Count)
+            {
+                AppendOutput(
+                    $"{Environment.NewLine}Note: scanned {results.Count} of {files.Count} table(s); " +
+                    $"the run stopped early (time budget reached).{Environment.NewLine}");
+            }
+
             AppendOutput($"{Environment.NewLine}Scan complete. See the Summary pane for results.{Environment.NewLine}");
 
             MergeResults(mode, results);

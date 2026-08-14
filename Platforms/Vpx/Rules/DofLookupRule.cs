@@ -27,6 +27,9 @@ public sealed class DofLookupRule : ICollectionRule
     // Opt-in: off unless the user selects it.
     public bool EnabledByDefault => false;
 
+    // Deep: needs each table's resolved ROM/cGameName from the parsed script.
+    public AnalysisDepth Depth => AnalysisDepth.Deep;
+
     public IReadOnlySet<string> SupportedPlatforms { get; } =
         new HashSet<string> { "vpx" };
 

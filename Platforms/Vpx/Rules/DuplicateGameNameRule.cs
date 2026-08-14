@@ -17,6 +17,9 @@ public sealed class DuplicateGameNameRule : ICollectionRule
 
     public bool EnabledByDefault => true;
 
+    // Deep: needs each table's cGameName, which comes from parsing the script.
+    public AnalysisDepth Depth => AnalysisDepth.Deep;
+
     public IReadOnlySet<string> SupportedPlatforms { get; } = new HashSet<string>();
 
     public IEnumerable<Finding> Evaluate(CollectionContext context)

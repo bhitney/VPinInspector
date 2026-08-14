@@ -47,6 +47,8 @@ public sealed class VpxPlatform : IPinballPlatform
         string gameName = ScriptAnalyzer.ResolveGameName(
             script, Path.GetFileNameWithoutExtension(filePath));
 
+        VpxCompoundFile.EmbeddedTableInfo info = VpxCompoundFile.GetTableInfo(filePath);
+
         return new VpxTable
         {
             FilePath = filePath,
@@ -54,6 +56,18 @@ public sealed class VpxPlatform : IPinballPlatform
             ElementsList = elements,
             Script = script,
             GameName = gameName,
+            EmbeddedTableName = info.TableName,
+            EmbeddedAuthor = info.Author,
+            EmbeddedFileVersion = info.Version,
         };
     }
+
+    public PinballTable LoadShallow(string filePath) => new VpxTable
+    {
+        FilePath = filePath,
+        TableName = Path.GetFileName(filePath),
+        ElementsList = Array.Empty<TableElement>(),
+        Script = null,
+        GameName = null,
+    };
 }

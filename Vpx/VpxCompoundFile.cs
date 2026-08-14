@@ -26,6 +26,56 @@ public static class VpxCompoundFile
     }
 
     /// <summary>
+    /// Embedded, author-supplied table metadata read from the file's own
+    /// <c>TableInfo</c> storage. These values are frequently stale or wrong, so
+    /// callers treat them as "as embedded in the file" rather than authoritative.
+    /// Any field is null when its stream is absent or empty.
+    /// </summary>
+    public readonly record struct EmbeddedTableInfo(string? TableName, string? Author, string? Version);
+
+    /// <summary>
+    /// Reads the <c>TableInfo</c> storage (TableName, AuthorName, TableVersion)
+    /// from a .vpx file. The streams hold UTF-16 (Unicode) text. Returns empty
+    /// fields when the storage or a given stream is missing.
+    /// </summary>
+    public static EmbeddedTableInfo GetTableInfo(string vpxFilePath)
+    {
+        using var root = RootStorage.OpenRead(vpxFilePath);
+
+        Storage tableInfo;
+        try
+        {
+            tableInfo = root.OpenStorage("TableInfo");
+        }
+        catch (Exception)
+        {
+            return new EmbeddedTableInfo(null, null, null);
+        }
+
+        return new EmbeddedTableInfo(
+            ReadUnicodeStream(tableInfo, "TableName"),
+            ReadUnicodeStream(tableInfo, "AuthorName"),
+            ReadUnicodeStream(tableInfo, "TableVersion"));
+    }
+
+    private static string? ReadUnicodeStream(Storage storage, string streamName)
+    {
+        try
+        {
+            using CfbStream stream = storage.OpenStream(streamName);
+            byte[] bytes = new byte[stream.Length];
+            stream.ReadExactly(bytes);
+
+            string value = System.Text.Encoding.Unicode.GetString(bytes).Trim('\0', ' ', '\r', '\n', '\t');
+            return value.Length == 0 ? null : value;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Locates the <c>CODE</c> record within a GameData byte buffer and returns
     /// its payload as text. The record is laid out as the 4-char tag "CODE"
     /// followed by an Int32 length and then that many bytes of script.

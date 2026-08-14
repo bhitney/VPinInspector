@@ -69,6 +69,10 @@ public sealed class ConfigurationChecksSettings
     [JsonPropertyName("pinup-game-match")]
     public PinupMatchSettings PinupGameMatch { get; init; } = new();
 
+    /// <summary>Settings for the PinUP Popper metadata comparison check.</summary>
+    [JsonPropertyName("pinup-metadata-check")]
+    public PinupMetadataCheckSettings PinupMetadataCheck { get; init; } = new();
+
     /// <summary>Settings for the PinUP Popper media-match check.</summary>
     [JsonPropertyName("media-match")]
     public PinupMediaMatchSettings MediaMatch { get; init; } = new();
@@ -100,6 +104,43 @@ public abstract class ConfigurationCheckSettings
 /// Settings for the PinUP Popper game-match check (folder vs database).
 /// </summary>
 public sealed class PinupMatchSettings : ConfigurationCheckSettings
+{
+    /// <summary>
+    /// Path to the PinUP Popper SQLite database. Defaults to the standard
+    /// install location when empty.
+    /// </summary>
+    [JsonPropertyName("databasePath")]
+    public string DatabasePath { get; init; } = @"C:\vPinball\PinUPSystem\PUPDatabase.db";
+
+    /// <summary>
+    /// Explicit emulator IDs (EMUID) to include, e.g. [ 1, 7, 10 ]. May be empty
+    /// when relying on <see cref="MatchEmulatorsByFolder"/>.
+    /// </summary>
+    [JsonPropertyName("emulatorIds")]
+    public List<int> EmulatorIds { get; init; } = new();
+
+    /// <summary>
+    /// When true, also include any emulator whose DirGames points at the folder
+    /// being scanned (path-normalized comparison). Defaults to true.
+    /// </summary>
+    [JsonPropertyName("matchEmulatorsByFolder")]
+    public bool MatchEmulatorsByFolder { get; init; } = true;
+
+    /// <summary>
+    /// When true, only consider games/emulators marked Visible in the database.
+    /// Defaults to false (consider all).
+    /// </summary>
+    [JsonPropertyName("visibleOnly")]
+    public bool VisibleOnly { get; init; }
+}
+
+/// <summary>
+/// Settings for the PinUP Popper metadata comparison check: compares each table's
+/// inferred/embedded ROM (cGameName), Manufacturer, and Year against the values
+/// recorded in the PinUP Popper Games table (ROM, Manufact, GameYear). A deep
+/// check (needs each table's parsed cGameName).
+/// </summary>
+public sealed class PinupMetadataCheckSettings : ConfigurationCheckSettings
 {
     /// <summary>
     /// Path to the PinUP Popper SQLite database. Defaults to the standard

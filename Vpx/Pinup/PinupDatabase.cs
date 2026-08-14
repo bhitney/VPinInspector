@@ -9,6 +9,20 @@ public sealed record PinupEmulator(int EmuId, string EmuName, string DirGames, b
 public sealed record PinupGame(int EmuId, string GameName, string GameFileName, bool Visible);
 
 /// <summary>
+/// A game's descriptive metadata as recorded in the PinUP Popper Games table:
+/// ROM (the table's cGameName), Manufacturer, Year, and Version. Used to compare
+/// against the values inferred from / embedded in each table file.
+/// </summary>
+public sealed record PinupGameMetadata(
+    int EmuId,
+    string GameFileName,
+    string? Rom,
+    string? Manufacturer,
+    string? Year,
+    string? Version,
+    bool Visible);
+
+/// <summary>
 /// A game joined with the media directory Popper resolves for it: the emulator's
 /// DirMedia when set, otherwise the GlobalSettings GlobalMediaDir fallback.
 /// </summary>
@@ -148,6 +162,65 @@ public sealed class PinupDatabase : IDisposable
         }
 
         return list;
+    }
+
+    /// <summary>
+    /// Returns descriptive metadata (ROM, Manufacturer, Year, Version) for the
+    /// games belonging to the given emulator IDs. String columns are returned
+    /// trimmed, with empty values normalized to null.
+    /// </summary>
+    public IReadOnlyList<PinupGameMetadata> GetGameMetadata(IReadOnlyCollection<int> emulatorIds)
+    {
+        var list = new List<PinupGameMetadata>();
+        if (emulatorIds.Count == 0)
+        {
+            return list;
+        }
+
+        var paramNames = emulatorIds.Select((_, i) => "@e" + i).ToList();
+
+        using SqliteCommand cmd = _connection.CreateCommand();
+        cmd.CommandText =
+            "SELECT EMUID, GameFileName, ROM, Manufact, GameYear, GAMEVER, Visible FROM Games " +
+            $"WHERE EMUID IN ({string.Join(", ", paramNames)}) " +
+            "ORDER BY GameName ASC";
+
+        int index = 0;
+        foreach (int id in emulatorIds)
+        {
+            cmd.Parameters.AddWithValue(paramNames[index++], id);
+        }
+
+        using SqliteDataReader reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            list.Add(new PinupGameMetadata(
+                EmuId: reader.IsDBNull(0) ? 0 : reader.GetInt32(0),
+                GameFileName: reader.IsDBNull(1) ? string.Empty : reader.GetString(1),
+                Rom: ReadTrimmed(reader, 2),
+                Manufacturer: ReadTrimmed(reader, 3),
+                Year: ReadTrimmed(reader, 4),
+                Version: ReadTrimmed(reader, 5),
+                Visible: !reader.IsDBNull(6) && reader.GetInt32(6) != 0));
+        }
+
+        return list;
+    }
+
+    private static string? ReadTrimmed(SqliteDataReader reader, int ordinal)
+    {
+        if (reader.IsDBNull(ordinal))
+        {
+            return null;
+        }
+
+        // GameYear can be stored as an integer; read defensively as a string.
+        string value = reader.GetFieldType(ordinal) == typeof(string)
+            ? reader.GetString(ordinal)
+            : reader.GetValue(ordinal)?.ToString() ?? string.Empty;
+
+        value = value.Trim();
+        return value.Length == 0 ? null : value;
     }
 
     public void Dispose() => _connection.Dispose();

@@ -59,6 +59,9 @@ public sealed class DeclarativeElementRule : ITableRule
 
     public bool EnabledByDefault => _source.Enabled;
 
+    // Deep: matches against the table's parsed elements (and timers).
+    public AnalysisDepth Depth => AnalysisDepth.Deep;
+
     // rules.json rules are authored against VPX today.
     public IReadOnlySet<string> SupportedPlatforms { get; } =
         new HashSet<string> { "vpx" };

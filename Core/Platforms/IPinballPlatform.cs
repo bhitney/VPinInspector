@@ -36,4 +36,13 @@ public interface IPinballPlatform
     /// result per scan.
     /// </summary>
     PinballTable Load(string filePath);
+
+    /// <summary>
+    /// Produces a lightweight table carrying only cheap metadata (file path and
+    /// name) without parsing the table body. Used when a scan selects only
+    /// <see cref="Rules.AnalysisDepth.Quick"/> rules, so the expensive body parse
+    /// is skipped. The default falls back to <see cref="Load"/>; platforms with a
+    /// slow parse should override it.
+    /// </summary>
+    PinballTable LoadShallow(string filePath) => Load(filePath);
 }

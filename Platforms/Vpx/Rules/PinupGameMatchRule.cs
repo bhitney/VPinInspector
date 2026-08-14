@@ -23,6 +23,9 @@ public sealed class PinupGameMatchRule : ICollectionRule
 
     public bool EnabledByDefault => _settings.Enabled;
 
+    // Quick: compares folder file names against the database only.
+    public AnalysisDepth Depth => AnalysisDepth.Quick;
+
     public IReadOnlySet<string> SupportedPlatforms { get; } = new HashSet<string>();
 
     public IEnumerable<Finding> Evaluate(CollectionContext context)

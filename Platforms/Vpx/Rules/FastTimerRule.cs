@@ -17,6 +17,9 @@ public sealed class FastTimerRule : ITableRule
 
     public bool EnabledByDefault => true;
 
+    // Deep: inspects the table's elements/timers, requiring a full parse.
+    public AnalysisDepth Depth => AnalysisDepth.Deep;
+
     public IReadOnlySet<string> SupportedPlatforms { get; } =
         new HashSet<string> { "vpx" };
 

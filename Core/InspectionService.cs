@@ -95,6 +95,9 @@ public sealed class InspectionService
         var tableReports = new List<TableReport>(files.Count);
         var contexts = new List<TableContext>(files.Count);
 
+        // Only pay for the expensive body parse when a selected rule needs it.
+        bool needsDeep = RequiresDeepAnalysis(options);
+
         Stopwatch? stopwatch = options.MaxRunTimeSeconds > 0
             ? Stopwatch.StartNew()
             : null;
@@ -103,7 +106,7 @@ public sealed class InspectionService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            TableReport report = ScanSingle(files[i], options.SelectedRuleIds, out TableContext? context);
+            TableReport report = ScanSingle(files[i], options.SelectedRuleIds, needsDeep, out TableContext? context);
             tableReports.Add(report);
             if (context is not null)
             {
@@ -157,6 +160,7 @@ public sealed class InspectionService
     private TableReport ScanSingle(
         string filePath,
         IReadOnlySet<string>? selectedRuleIds,
+        bool deep,
         out TableContext? context)
     {
         context = null;
@@ -176,7 +180,7 @@ public sealed class InspectionService
 
         try
         {
-            var table = platform.Load(filePath);
+            var table = deep ? platform.Load(filePath) : platform.LoadShallow(filePath);
             var ctx = new TableContext { Platform = platform, Table = table };
             context = ctx;
 
@@ -250,4 +254,19 @@ public sealed class InspectionService
         selectedRuleIds is not null
             ? selectedRuleIds.Contains(rule.Id)
             : rule.EnabledByDefault;
+
+    /// <summary>
+    /// True when any selected rule (table, or collection when they run) needs a
+    /// full table parse. When false, tables are loaded shallowly (metadata only).
+    /// </summary>
+    private bool RequiresDeepAnalysis(ScanOptions options)
+    {
+        bool tableDeep = _registry.TableRules
+            .Any(r => r.Depth == AnalysisDepth.Deep && IsSelected(r, options.SelectedRuleIds));
+
+        bool collectionDeep = options.RunCollectionRules && _registry.CollectionRules
+            .Any(r => r.Depth == AnalysisDepth.Deep && IsSelected(r, options.SelectedRuleIds));
+
+        return tableDeep || collectionDeep;
+    }
 }

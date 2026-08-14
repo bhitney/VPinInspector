@@ -106,9 +106,11 @@ public static class ReportRenderer
         }
 
         Info(string.Empty);
+        int collectionFindings = report.CollectionFindings.Sum(g => g.Findings.Count);
         Info(
             $"Totals: {results.Count} table(s), {flaggedTables} flagged, {cleanTables} clean, " +
-            $"{failedTables} unreadable, {totalFindings} total finding(s).");
+            $"{failedTables} unreadable, {totalFindings} per-table finding(s), " +
+            $"{collectionFindings} collection finding(s).");
 
         AppendUnreadableLines(lines, results);
         AppendCollectionFindingLines(lines, report.CollectionFindings);

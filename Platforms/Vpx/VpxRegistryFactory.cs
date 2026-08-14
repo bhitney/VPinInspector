@@ -45,12 +45,16 @@ public static class VpxRegistryFactory
 
         // 3. Opt-in integrations (each reports its own EnabledByDefault from settings).
         registry.AddCollectionRule(new PinupGameMatchRule(settings.ConfigurationChecks.PinupGameMatch));
+        registry.AddCollectionRule(new PinupMetadataCheckRule(settings.ConfigurationChecks.PinupMetadataCheck));
         registry.AddCollectionRule(new PinupMediaMatchRule(settings.ConfigurationChecks.MediaMatch));
         registry.AddCollectionRule(new VrRoomMatchRule(settings.ConfigurationChecks.VrRoomMatching));
         registry.AddCollectionRule(new DofLookupRule(settings.DofConfigPath));
 
         // 4. Built-in code rule: duplicate cGameName across the collection.
         registry.AddCollectionRule(new DuplicateGameNameRule());
+
+        // 5. Built-in table rule: table name follows "Name (Manufacturer Year)".
+        registry.AddTableRule(new WellFormedNameRule());
 
         return registry;
     }

@@ -21,6 +21,9 @@ public sealed class PinupMediaMatchRule : ICollectionRule
 
     public bool EnabledByDefault => _settings.Enabled;
 
+    // Quick: compares database entries against media folder listings only.
+    public AnalysisDepth Depth => AnalysisDepth.Quick;
+
     public IReadOnlySet<string> SupportedPlatforms { get; } = new HashSet<string>();
 
     public IEnumerable<Finding> Evaluate(CollectionContext context)

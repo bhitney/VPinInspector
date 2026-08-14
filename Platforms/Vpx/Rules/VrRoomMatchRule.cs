@@ -20,6 +20,9 @@ public sealed class VrRoomMatchRule : ICollectionRule
 
     public bool EnabledByDefault => _settings.Enabled;
 
+    // Quick: only compares file names within the folder.
+    public AnalysisDepth Depth => AnalysisDepth.Quick;
+
     public IReadOnlySet<string> SupportedPlatforms { get; } = new HashSet<string>();
 
     public IEnumerable<Finding> Evaluate(CollectionContext context)

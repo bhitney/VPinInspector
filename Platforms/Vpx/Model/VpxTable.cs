@@ -17,4 +17,10 @@ public sealed class VpxTable : PinballTable
     public override string? Script { get; init; }
 
     public override string? GameName { get; init; }
+
+    public override string? EmbeddedTableName { get; init; }
+
+    public override string? EmbeddedAuthor { get; init; }
+
+    public override string? EmbeddedFileVersion { get; init; }
 }
