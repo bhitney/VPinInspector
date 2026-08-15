@@ -43,7 +43,7 @@
         "matchEmulatorsByFolder": true,
         "visibleOnly": false,
         "lookupCsvPath": "",
-        "lookupColumns": [ "GameName", "Manufact", "GameYear", "GAMEVER" ]
+        "lookupColumns": [ "GameName", "Manufact", "GameYear", "GAMEVER", "WEBGameID" ]
       },
       "version-check": {
         "enabled": true,

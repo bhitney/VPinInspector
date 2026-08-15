@@ -26,7 +26,7 @@ public sealed class VersionCheckRule : ICollectionRule
     private const double MatchThreshold = 0.5;
 
     private static readonly IReadOnlyList<string> Columns =
-        new[] { "GameName", "Manufact", "GameYear", "GAMEVER" };
+        new[] { "GameName", "Manufact", "GameYear", "GAMEVER", "WEBGameID" };
 
     private readonly VersionCheckSettings _settings;
 
@@ -96,25 +96,7 @@ public sealed class VersionCheckRule : ICollectionRule
         var findings = new List<Finding>();
 
         PupLookupTable lookup = PupLookupTable.Load(csvPath, Columns);
-
-        // Index CSV rows by (manufacturer|year) for exact gating.
-        var byManufacturerYear = new Dictionary<string, List<PupLookupRow>>(StringComparer.OrdinalIgnoreCase);
-        foreach (PupLookupRow row in lookup.Rows)
-        {
-            string key = MakeKey(row.Get("Manufact"), row.Get("GameYear"));
-            if (key.Length == 0)
-            {
-                continue;
-            }
-
-            if (!byManufacturerYear.TryGetValue(key, out List<PupLookupRow>? bucket))
-            {
-                bucket = new List<PupLookupRow>();
-                byManufacturerYear[key] = bucket;
-            }
-
-            bucket.Add(row);
-        }
+        PupLookupIndex index = PupLookupIndex.Build(lookup);
 
         using PinupDatabase db = PinupDatabase.Open(_settings.DatabasePath);
 
@@ -133,6 +115,7 @@ public sealed class VersionCheckRule : ICollectionRule
         }
 
         int compared = 0;
+        int webIdMatches = 0;
 
         // Collect findings into buckets so the summary can present them grouped:
         // VPS newer first (most actionable), then local newer, then unknown.
@@ -145,22 +128,22 @@ public sealed class VersionCheckRule : ICollectionRule
             .Where(g => !string.IsNullOrWhiteSpace(g.GameName))
             .OrderBy(g => g.GameName, StringComparer.OrdinalIgnoreCase))
         {
-            string key = MakeKey(game.Manufacturer, game.Year);
-            if (key.Length == 0 || !byManufacturerYear.TryGetValue(key, out List<PupLookupRow>? candidates))
+            PupMatchResult match = index.Match(game, MatchThreshold);
+            if (!match.Matched)
             {
                 // No matchable VPS entry: that's pup-hygiene's concern, not ours.
                 continue;
             }
 
-            // Among rows whose name fuzzy-matches, pick the newest online version.
-            string? onlineVersion = null;
-            foreach (PupLookupRow candidate in candidates)
+            if (match.Kind == PupMatchKind.WebGameId)
             {
-                if (PupNameMatcher.Score(game.GameName, candidate.Get("GameName")) < MatchThreshold)
-                {
-                    continue;
-                }
+                webIdMatches++;
+            }
 
+            // Among the matched rows, pick the newest online version.
+            string? onlineVersion = null;
+            foreach (PupLookupRow candidate in match.Rows)
+            {
                 string? version = candidate.Get("GAMEVER");
                 if (string.IsNullOrWhiteSpace(version))
                 {
@@ -241,6 +224,11 @@ public sealed class VersionCheckRule : ICollectionRule
                 $"All {compared} matched game(s) are on the current VPS version."));
         }
 
+        findings.Insert(0, new Finding(
+            Id,
+            FindingSeverity.Info,
+            $"Matched by WEBGameID: {webIdMatches} of {compared} compared game(s)."));
+
         return findings;
     }
 
@@ -279,13 +267,6 @@ public sealed class VersionCheckRule : ICollectionRule
         }
 
         return path;
-    }
-
-    private static string MakeKey(string? manufacturer, string? year)
-    {
-        string m = manufacturer?.Trim() ?? string.Empty;
-        string y = year?.Trim() ?? string.Empty;
-        return m.Length == 0 || y.Length == 0 ? string.Empty : $"{m}|{y}";
     }
 
     private static string Describe(string? manufacturer, string? year) =>

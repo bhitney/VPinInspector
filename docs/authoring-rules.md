@@ -295,9 +295,11 @@ Reports **[WARN]** for each VR ROOM file with no matching base table.
 
 Cross-checks each PinUP Popper Games entry against the VPS `puplookup.csv`
 reference file (downloaded via **Tools → Download VPS Database**, or fetched on
-demand when missing). A game counts as matched when a CSV row shares the same
-**manufacturer and year** (exact) and its `GameName` **fuzzy-matches** the
-Popper GameName. Fuzzy matching normalizes punctuation/casing, unwraps
+demand when missing). Matching is **WEBGameID-first**: when a Popper game and a
+CSV row share a non-empty VPS `WEBGameID`, that is the definitive match. Since
+`WEBGameID` is sparse in Popper today, the rule falls back to matching on the
+same **manufacturer and year** (exact) plus a `GameName` **fuzzy-match** when the
+id is missing. Fuzzy matching normalizes punctuation/casing, unwraps
 parenthesized groups, and drops edition/mod noise tokens — so
 `AC-DC LUCI (Stern 2013) VPW` still matches `AC/DC (LUCI Premium) (Stern 2013)`.
 
@@ -308,7 +310,7 @@ parenthesized groups, and drops edition/mod noise tokens — so
 | `matchEmulatorsByFolder` | Also include emulators whose DirGames points at the scanned folder. |
 | `visibleOnly` | Only consider games/emulators marked Visible. |
 | `lookupCsvPath` | Override path to `puplookup.csv` (empty = app-directory copy). |
-| `lookupColumns` | CSV columns to load. Defaults to `GameName`, `Manufact`, `GameYear`, `GAMEVER`. |
+| `lookupColumns` | CSV columns to load. Defaults to `GameName`, `Manufact`, `GameYear`, `GAMEVER`, `WEBGameID`. |
 
 Reports **[WARN]** for each Popper game with no manufacturer/year or no fuzzy
 name match in the CSV.
@@ -317,11 +319,11 @@ name match in the CSV.
 
 Compares each PinUP Popper game's **local version** (`GAMEVER`) against the
 **newest online version** in the VPS `puplookup.csv`. Games are matched the same
-way as `pup-hygiene` (exact manufacturer/year + fuzzy name); this check assumes
-matching works and focuses only on version drift. Versions aren't strict semver
-(e.g. `1.2b`, `FizX3.3V1`, `1.0.0f`), so ordering is best-effort: the dotted
-numeric backbone is compared segment-by-segment, and anything ambiguous falls
-into the "unknown" bucket rather than guessing.
+way as `pup-hygiene` (**WEBGameID-first**, then exact manufacturer/year + fuzzy
+name); this check assumes matching works and focuses only on version drift.
+Versions aren't strict semver (e.g. `1.2b`, `FizX3.3V1`, `1.0.0f`), so ordering
+is best-effort: the dotted numeric backbone is compared segment-by-segment, and
+anything ambiguous falls into the "unknown" bucket rather than guessing.
 
 | Field | Meaning |
 |---|---|

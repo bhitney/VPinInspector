@@ -90,25 +90,7 @@ public sealed class PupHygieneRule : ICollectionRule
         IReadOnlyList<string>? columns =
             _settings.LookupColumns.Count > 0 ? _settings.LookupColumns : null;
         PupLookupTable lookup = PupLookupTable.Load(csvPath, columns);
-
-        // Index CSV rows by (manufacturer|year) for exact gating, then fuzzy-match name.
-        var byManufacturerYear = new Dictionary<string, List<PupLookupRow>>(StringComparer.OrdinalIgnoreCase);
-        foreach (PupLookupRow row in lookup.Rows)
-        {
-            string key = MakeKey(row.Get("Manufact"), row.Get("GameYear"));
-            if (key.Length == 0)
-            {
-                continue;
-            }
-
-            if (!byManufacturerYear.TryGetValue(key, out List<PupLookupRow>? bucket))
-            {
-                bucket = new List<PupLookupRow>();
-                byManufacturerYear[key] = bucket;
-            }
-
-            bucket.Add(row);
-        }
+        PupLookupIndex index = PupLookupIndex.Build(lookup);
 
         using PinupDatabase db = PinupDatabase.Open(_settings.DatabasePath);
 
@@ -126,12 +108,20 @@ public sealed class PupHygieneRule : ICollectionRule
             games = games.Where(g => g.Visible).ToList();
         }
 
+        int webIdMatches = 0;
+
         foreach (PinupGameIdentity game in games
             .Where(g => !string.IsNullOrWhiteSpace(g.GameName))
             .OrderBy(g => g.GameName, StringComparer.OrdinalIgnoreCase))
         {
-            string key = MakeKey(game.Manufacturer, game.Year);
-            if (key.Length == 0 || !byManufacturerYear.TryGetValue(key, out List<PupLookupRow>? candidates))
+            PupMatchResult match = index.Match(game, MatchThreshold);
+
+            if (match.Kind == PupMatchKind.WebGameId)
+            {
+                webIdMatches++;
+            }
+
+            if (match.NoCandidates)
             {
                 findings.Add(new Finding(
                     Id,
@@ -141,27 +131,15 @@ public sealed class PupHygieneRule : ICollectionRule
                 continue;
             }
 
-            double best = 0d;
-            string? bestName = null;
-            foreach (PupLookupRow candidate in candidates)
-            {
-                double score = PupNameMatcher.Score(game.GameName, candidate.Get("GameName"));
-                if (score > best)
-                {
-                    best = score;
-                    bestName = candidate.Get("GameName");
-                }
-            }
-
-            if (best < MatchThreshold)
+            if (!match.Matched)
             {
                 findings.Add(new Finding(
                     Id,
                     FindingSeverity.Warning,
                     $"No VPS name match: \"{game.GameName}\" ({Describe(game.Manufacturer, game.Year)}); " +
-                    (bestName is null
+                    (match.ClosestName is null
                         ? "no candidate names for that manufacturer/year."
-                        : $"closest was \"{bestName}\" (score {best:0.00}).")));
+                        : $"closest was \"{match.ClosestName}\" (score {match.ClosestScore:0.00}).")));
             }
         }
 
@@ -172,6 +150,11 @@ public sealed class PupHygieneRule : ICollectionRule
                 FindingSeverity.Info,
                 $"All {games.Count} game(s) matched a VPS puplookup.csv entry."));
         }
+
+        findings.Insert(0, new Finding(
+            Id,
+            FindingSeverity.Info,
+            $"Matched by WEBGameID: {webIdMatches} of {games.Count} game(s)."));
 
         return findings;
     }
@@ -196,13 +179,6 @@ public sealed class PupHygieneRule : ICollectionRule
         }
 
         return path;
-    }
-
-    private static string MakeKey(string? manufacturer, string? year)
-    {
-        string m = manufacturer?.Trim() ?? string.Empty;
-        string y = year?.Trim() ?? string.Empty;
-        return m.Length == 0 || y.Length == 0 ? string.Empty : $"{m}|{y}";
     }
 
     private static string Describe(string? manufacturer, string? year) =>

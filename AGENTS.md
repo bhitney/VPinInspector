@@ -92,6 +92,7 @@ UI/MainForm.cs                     WinForms window: menu bar (File/Tools), folde
 Vps/VpsDownloader.cs               Downloads VPS reference data (puplookup.csv, vpsdb.json) into the app directory.
 Vps/PupLookupTable.cs              Quote-aware CSV loader for puplookup.csv (configurable columns).
 Vps/PupNameMatcher.cs              Fuzzy game-name matcher (token normalization + containment/Jaccard score).
+Vps/PupLookupIndex.cs              Popper-game→VPS matcher: WEBGameID-first, then manufacturer/year + fuzzy-name fallback.
 Vps/VersionComparer.cs             Heuristic version ordering (Equal/OnlineNewer/LocalNewer/Unknown).
 rules.json                         User-editable settings + configurationChecks + rules. Copied to output.
 docs/authoring-rules.md            End-user guide for authoring rules.json.

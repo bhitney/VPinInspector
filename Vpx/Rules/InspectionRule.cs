@@ -287,11 +287,12 @@ public sealed class PupHygieneSettings : ConfigurationCheckSettings
 
     /// <summary>
     /// The puplookup.csv columns to load. Defaults to GameName, Manufact,
-    /// GameYear, GAMEVER. Configurable so columns can be added/removed later.
+    /// GameYear, GAMEVER, WEBGameID. Configurable so columns can be added/removed
+    /// later. WEBGameID is the definitive match key when populated.
     /// </summary>
     [JsonPropertyName("lookupColumns")]
     public List<string> LookupColumns { get; init; } =
-        new() { "GameName", "Manufact", "GameYear", "GAMEVER" };
+        new() { "GameName", "Manufact", "GameYear", "GAMEVER", "WEBGameID" };
 }
 
 /// <summary>

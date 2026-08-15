@@ -12,6 +12,8 @@ public sealed record PinupGame(int EmuId, string GameName, string GameFileName, 
 /// A game's identity used by the PinUP hygiene check: its display GameName plus
 /// the descriptive Manufacturer, Year, and Version, as recorded in the PinUP
 /// Popper Games table. Compared against the VPS puplookup.csv reference file.
+/// <see cref="WebGameId"/> is the VPS WEBGameID when populated (mostly empty
+/// today); it is the definitive match key when present.
 /// </summary>
 public sealed record PinupGameIdentity(
     int EmuId,
@@ -20,6 +22,7 @@ public sealed record PinupGameIdentity(
     string? Manufacturer,
     string? Year,
     string? Version,
+    string? WebGameId,
     bool Visible);
 
 /// <summary>
@@ -195,7 +198,7 @@ public sealed class PinupDatabase : IDisposable
 
         using SqliteCommand cmd = _connection.CreateCommand();
         cmd.CommandText =
-            "SELECT EMUID, GameName, GameFileName, Manufact, GameYear, GAMEVER, Visible FROM Games " +
+            "SELECT EMUID, GameName, GameFileName, Manufact, GameYear, GAMEVER, WEBGameID, Visible FROM Games " +
             $"WHERE EMUID IN ({string.Join(", ", paramNames)}) " +
             "ORDER BY GameName ASC";
 
@@ -215,7 +218,8 @@ public sealed class PinupDatabase : IDisposable
                 Manufacturer: ReadTrimmed(reader, 3),
                 Year: ReadTrimmed(reader, 4),
                 Version: ReadTrimmed(reader, 5),
-                Visible: !reader.IsDBNull(6) && reader.GetInt32(6) != 0));
+                WebGameId: ReadTrimmed(reader, 6),
+                Visible: !reader.IsDBNull(7) && reader.GetInt32(7) != 0));
         }
 
         return list;
