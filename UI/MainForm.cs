@@ -9,6 +9,7 @@ using VPin.Inspector.Core.Rules;
 using VPin.Inspector.Platforms.Vpx;
 using VPin.Inspector.Platforms.Vpx.Reporting;
 using VPin.Inspector.Vpx.Rules;
+using VPin.Inspector.Vps;
 
 namespace VPin.Inspector.UI;
 
@@ -38,6 +39,8 @@ public sealed class MainForm : Form
     private readonly SplitContainer _outputSplit;
     private readonly Label _statusLabel;
     private readonly ProgressBar _progressBar;
+    private readonly MenuStrip _menuStrip;
+    private readonly ToolStripMenuItem _downloadVpsItem;
 
     private readonly string _rulesPath;
     private RuleEngine? _engine;
@@ -61,6 +64,23 @@ public sealed class MainForm : Form
         ClientSize = new Size(1000, 720);
 
         _rulesPath = Path.Combine(AppContext.BaseDirectory, "rules.json");
+
+        // Menu bar. Grows over time; for now File (Exit) and Tools (download VPS
+        // reference data).
+        var menuStrip = new MenuStrip { Dock = DockStyle.Top };
+
+        var fileMenu = new ToolStripMenuItem("File");
+        var exitItem = new ToolStripMenuItem("Exit", null, (_, _) => Close());
+        fileMenu.DropDownItems.Add(exitItem);
+
+        var toolsMenu = new ToolStripMenuItem("Tools");
+        _downloadVpsItem = new ToolStripMenuItem(
+            "Download VPS Database", null, async (_, _) => await DownloadVpsAsync());
+        toolsMenu.DropDownItems.Add(_downloadVpsItem);
+
+        menuStrip.Items.Add(fileMenu);
+        menuStrip.Items.Add(toolsMenu);
+        _menuStrip = menuStrip;
 
         // Two-row top area: folder row, then button row. AutoSize + docked flow
         // panels scale correctly under high DPI instead of using fixed pixels.
@@ -409,6 +429,8 @@ public sealed class MainForm : Form
         Controls.Add(split);
         Controls.Add(topPanel);
         Controls.Add(bottomPanel);
+        Controls.Add(_menuStrip);
+        MainMenuStrip = _menuStrip;
 
         LoadRulesIntoTree();
     }
@@ -941,6 +963,49 @@ public sealed class MainForm : Form
     private void AppendOutput(string text)
     {
         _outputBox.AppendText(text);
+    }
+
+    /// <summary>
+    /// Downloads the VPS reference data files into the application directory,
+    /// streaming progress to the log pane and status label. Runs off the UI
+    /// thread; the menu item is disabled while a download is in progress.
+    /// </summary>
+    private async Task DownloadVpsAsync()
+    {
+        _downloadVpsItem.Enabled = false;
+        _statusLabel.Text = "Downloading VPS database...";
+
+        var progress = new Progress<string>(message =>
+        {
+            AppendOutput(message + Environment.NewLine);
+            _statusLabel.Text = message;
+        });
+
+        try
+        {
+            var downloader = new VpsDownloader();
+            AppendOutput($"Downloading VPS data to {downloader.TargetDirectory}{Environment.NewLine}");
+
+            IReadOnlyList<string> files = await downloader.DownloadAllAsync(progress);
+
+            AppendOutput($"VPS download complete: {files.Count} file(s).{Environment.NewLine}");
+            _statusLabel.Text = $"VPS download complete ({files.Count} file(s)).";
+        }
+        catch (Exception ex)
+        {
+            AppendOutput($"VPS download failed: {ex.Message}{Environment.NewLine}");
+            _statusLabel.Text = "VPS download failed.";
+            MessageBox.Show(
+                this,
+                $"Failed to download VPS database:{Environment.NewLine}{ex.Message}",
+                "VPS Download",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+        finally
+        {
+            _downloadVpsItem.Enabled = true;
+        }
     }
 
     /// <summary>

@@ -68,6 +68,8 @@ Platforms/Vpx/                     VPX platform adapter (lives in the app projec
 	PinupMediaMatchRule.cs         Opt-in ICollectionRule (Quick): PinUP media presence per media folder.
 	VrRoomMatchRule.cs             Opt-in ICollectionRule (Quick): "VR ROOM x" has a base "x".
 	DuplicateGameNameRule.cs       ICollectionRule (Deep): 2+ tables sharing a cGameName.
+	PupHygieneRule.cs              Opt-in ICollectionRule (Quick): Popper Games vs VPS puplookup.csv (exact manufacturer/year + fuzzy name).
+	VersionCheckRule.cs           Opt-in ICollectionRule (Quick): local Popper GAMEVER vs newest VPS puplookup.csv version.
 	FastTimerRule.cs               Example ITableRule (NOT registered; illustration only).
   Reporting/
 	RenderedLine.cs                Severity-tagged line (single source of truth for summary content).
@@ -86,7 +88,11 @@ Vpx/                               Legacy VPX helpers (still used by the adapter
 
 Program.cs                         Entry point. No args -> GUI; path arg -> console scan.
 UI/AppUi.cs                        STA message-loop host for the GUI.
-UI/MainForm.cs                     WinForms window: folder picker, rules tree, settings, log + summary panes.
+UI/MainForm.cs                     WinForms window: menu bar (File/Tools), folder picker, rules tree, settings, log + summary panes.
+Vps/VpsDownloader.cs               Downloads VPS reference data (puplookup.csv, vpsdb.json) into the app directory.
+Vps/PupLookupTable.cs              Quote-aware CSV loader for puplookup.csv (configurable columns).
+Vps/PupNameMatcher.cs              Fuzzy game-name matcher (token normalization + containment/Jaccard score).
+Vps/VersionComparer.cs             Heuristic version ordering (Equal/OnlineNewer/LocalNewer/Unknown).
 rules.json                         User-editable settings + configurationChecks + rules. Copied to output.
 docs/authoring-rules.md            End-user guide for authoring rules.json.
 ```

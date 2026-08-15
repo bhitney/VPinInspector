@@ -34,6 +34,25 @@
         "enabled": true,
         "respectExcludePatterns": false,
         "prefix": "VR ROOM "
+      },
+      "pup-hygiene": {
+        "enabled": true,
+        "respectExcludePatterns": false,
+        "databasePath": "C:\\vPinball\\PinUPSystem\\PUPDatabase.db",
+        "emulatorIds": [],
+        "matchEmulatorsByFolder": true,
+        "visibleOnly": false,
+        "lookupCsvPath": "",
+        "lookupColumns": [ "GameName", "Manufact", "GameYear", "GAMEVER" ]
+      },
+      "version-check": {
+        "enabled": true,
+        "respectExcludePatterns": false,
+        "databasePath": "C:\\vPinball\\PinUPSystem\\PUPDatabase.db",
+        "emulatorIds": [],
+        "matchEmulatorsByFolder": true,
+        "visibleOnly": false,
+        "lookupCsvPath": ""
       }
     }
   },

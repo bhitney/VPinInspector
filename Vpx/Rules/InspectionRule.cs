@@ -80,6 +80,14 @@ public sealed class ConfigurationChecksSettings
     /// <summary>Settings for the VR ROOM matching check.</summary>
     [JsonPropertyName("vr-room-matching")]
     public VrRoomMatchSettings VrRoomMatching { get; init; } = new();
+
+    /// <summary>Settings for the PinUP hygiene check (Popper Games vs VPS puplookup.csv).</summary>
+    [JsonPropertyName("pup-hygiene")]
+    public PupHygieneSettings PupHygiene { get; init; } = new();
+
+    /// <summary>Settings for the version check (local Popper GAMEVER vs VPS puplookup.csv).</summary>
+    [JsonPropertyName("version-check")]
+    public VersionCheckSettings VersionCheck { get; init; } = new();
 }
 
 /// <summary>
@@ -233,6 +241,100 @@ public sealed class VrRoomMatchSettings : ConfigurationCheckSettings
     /// </summary>
     [JsonPropertyName("prefix")]
     public string Prefix { get; init; } = "VR ROOM ";
+}
+
+/// <summary>
+/// Settings for the PinUP hygiene check: cross-checks each PinUP Popper Games
+/// entry against the VPS <c>puplookup.csv</c> reference file, matching
+/// manufacturer and year exactly and fuzzy-matching the game name.
+/// </summary>
+public sealed class PupHygieneSettings : ConfigurationCheckSettings
+{
+    /// <summary>
+    /// Path to the PinUP Popper SQLite database. Defaults to the standard
+    /// install location when empty.
+    /// </summary>
+    [JsonPropertyName("databasePath")]
+    public string DatabasePath { get; init; } = @"C:\vPinball\PinUPSystem\PUPDatabase.db";
+
+    /// <summary>
+    /// Explicit emulator IDs (EMUID) to include, e.g. [ 1, 7, 10 ]. May be empty
+    /// when relying on <see cref="MatchEmulatorsByFolder"/>.
+    /// </summary>
+    [JsonPropertyName("emulatorIds")]
+    public List<int> EmulatorIds { get; init; } = new();
+
+    /// <summary>
+    /// When true, also include any emulator whose DirGames points at the folder
+    /// being scanned (path-normalized comparison). Defaults to true.
+    /// </summary>
+    [JsonPropertyName("matchEmulatorsByFolder")]
+    public bool MatchEmulatorsByFolder { get; init; } = true;
+
+    /// <summary>
+    /// When true, only consider games/emulators marked Visible in the database.
+    /// Defaults to false (consider all).
+    /// </summary>
+    [JsonPropertyName("visibleOnly")]
+    public bool VisibleOnly { get; init; }
+
+    /// <summary>
+    /// Optional override path to the VPS puplookup.csv. When empty, the file in
+    /// the application directory is used (downloaded on demand when missing).
+    /// </summary>
+    [JsonPropertyName("lookupCsvPath")]
+    public string LookupCsvPath { get; init; } = string.Empty;
+
+    /// <summary>
+    /// The puplookup.csv columns to load. Defaults to GameName, Manufact,
+    /// GameYear, GAMEVER. Configurable so columns can be added/removed later.
+    /// </summary>
+    [JsonPropertyName("lookupColumns")]
+    public List<string> LookupColumns { get; init; } =
+        new() { "GameName", "Manufact", "GameYear", "GAMEVER" };
+}
+
+/// <summary>
+/// Settings for the version check: compares each PinUP Popper game's local
+/// version (GAMEVER) against the newest matching version in the VPS
+/// puplookup.csv, flagging mismatches (online newer / local newer / unknown).
+/// </summary>
+public sealed class VersionCheckSettings : ConfigurationCheckSettings
+{
+    /// <summary>
+    /// Path to the PinUP Popper SQLite database. Defaults to the standard
+    /// install location when empty.
+    /// </summary>
+    [JsonPropertyName("databasePath")]
+    public string DatabasePath { get; init; } = @"C:\vPinball\PinUPSystem\PUPDatabase.db";
+
+    /// <summary>
+    /// Explicit emulator IDs (EMUID) to include, e.g. [ 1, 7, 10 ]. May be empty
+    /// when relying on <see cref="MatchEmulatorsByFolder"/>.
+    /// </summary>
+    [JsonPropertyName("emulatorIds")]
+    public List<int> EmulatorIds { get; init; } = new();
+
+    /// <summary>
+    /// When true, also include any emulator whose DirGames points at the folder
+    /// being scanned (path-normalized comparison). Defaults to true.
+    /// </summary>
+    [JsonPropertyName("matchEmulatorsByFolder")]
+    public bool MatchEmulatorsByFolder { get; init; } = true;
+
+    /// <summary>
+    /// When true, only consider games/emulators marked Visible in the database.
+    /// Defaults to false (consider all).
+    /// </summary>
+    [JsonPropertyName("visibleOnly")]
+    public bool VisibleOnly { get; init; }
+
+    /// <summary>
+    /// Optional override path to the VPS puplookup.csv. When empty, the file in
+    /// the application directory is used (downloaded on demand when missing).
+    /// </summary>
+    [JsonPropertyName("lookupCsvPath")]
+    public string LookupCsvPath { get; init; } = string.Empty;
 }
 
 /// <summary>

@@ -291,6 +291,51 @@ is unusual.
 
 Reports **[WARN]** for each VR ROOM file with no matching base table.
 
+### `pup-hygiene`
+
+Cross-checks each PinUP Popper Games entry against the VPS `puplookup.csv`
+reference file (downloaded via **Tools → Download VPS Database**, or fetched on
+demand when missing). A game counts as matched when a CSV row shares the same
+**manufacturer and year** (exact) and its `GameName` **fuzzy-matches** the
+Popper GameName. Fuzzy matching normalizes punctuation/casing, unwraps
+parenthesized groups, and drops edition/mod noise tokens — so
+`AC-DC LUCI (Stern 2013) VPW` still matches `AC/DC (LUCI Premium) (Stern 2013)`.
+
+| Field | Meaning |
+|---|---|
+| `databasePath` | Path to `PUPDatabase.db`. |
+| `emulatorIds` | Explicit EMUIDs to include (empty = resolve by folder). |
+| `matchEmulatorsByFolder` | Also include emulators whose DirGames points at the scanned folder. |
+| `visibleOnly` | Only consider games/emulators marked Visible. |
+| `lookupCsvPath` | Override path to `puplookup.csv` (empty = app-directory copy). |
+| `lookupColumns` | CSV columns to load. Defaults to `GameName`, `Manufact`, `GameYear`, `GAMEVER`. |
+
+Reports **[WARN]** for each Popper game with no manufacturer/year or no fuzzy
+name match in the CSV.
+
+### `version-check`
+
+Compares each PinUP Popper game's **local version** (`GAMEVER`) against the
+**newest online version** in the VPS `puplookup.csv`. Games are matched the same
+way as `pup-hygiene` (exact manufacturer/year + fuzzy name); this check assumes
+matching works and focuses only on version drift. Versions aren't strict semver
+(e.g. `1.2b`, `FizX3.3V1`, `1.0.0f`), so ordering is best-effort: the dotted
+numeric backbone is compared segment-by-segment, and anything ambiguous falls
+into the "unknown" bucket rather than guessing.
+
+| Field | Meaning |
+|---|---|
+| `databasePath` | Path to `PUPDatabase.db`. |
+| `emulatorIds` | Explicit EMUIDs to include (empty = resolve by folder). |
+| `matchEmulatorsByFolder` | Also include emulators whose DirGames points at the scanned folder. |
+| `visibleOnly` | Only consider games/emulators marked Visible. |
+| `lookupCsvPath` | Override path to `puplookup.csv` (empty = app-directory copy). |
+
+Reports three buckets:
+- **[WARN]** *Newer VPS version available* — online is newer than local (most actionable).
+- **[INFO]** *Local version is newer than VPS* — local is ahead.
+- **[INFO]** *Version differs (can't tell which is newer)* — different but unorderable.
+
 ### Adding a configuration check (code task)
 
 1. Create a settings class extending `ConfigurationCheckSettings` (add its own

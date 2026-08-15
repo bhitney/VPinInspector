@@ -49,6 +49,8 @@ public static class VpxRegistryFactory
         registry.AddCollectionRule(new PinupMediaMatchRule(settings.ConfigurationChecks.MediaMatch));
         registry.AddCollectionRule(new VrRoomMatchRule(settings.ConfigurationChecks.VrRoomMatching));
         registry.AddCollectionRule(new DofLookupRule(settings.DofConfigPath));
+        registry.AddCollectionRule(new PupHygieneRule(settings.ConfigurationChecks.PupHygiene));
+        registry.AddCollectionRule(new VersionCheckRule(settings.ConfigurationChecks.VersionCheck));
 
         // 4. Built-in code rule: duplicate cGameName across the collection.
         registry.AddCollectionRule(new DuplicateGameNameRule());
