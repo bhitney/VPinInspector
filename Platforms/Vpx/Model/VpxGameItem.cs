@@ -53,6 +53,12 @@ public sealed class VpxGameItem : TableElement, ITimerElement
     public int TimerIntervalMs { get; init; } = -1;
 
     /// <summary>
+    /// Property-bag key for a primitive's "Hide parts behind" flag (BIFF
+    /// <c>ZMSK</c> / <c>m_useDepthMask</c>). Stored as a <see cref="bool"/>.
+    /// </summary>
+    public const string HidePartsBehindKey = "HidePartsBehind";
+
+    /// <summary>
     /// Ported from GameItem.Parse: reads NAME/TMON/TMIN from a GameItem stream.
     /// </summary>
     public static VpxGameItem Parse(string streamName, byte[] bytes)
@@ -62,6 +68,7 @@ public sealed class VpxGameItem : TableElement, ITimerElement
         string name = string.Empty;
         bool timerEnabled = false;
         int timerInterval = -1;
+        bool? hidePartsBehind = null;
 
         foreach (var record in records)
         {
@@ -76,7 +83,16 @@ public sealed class VpxGameItem : TableElement, ITimerElement
                 case "TMIN":
                     timerInterval = record.AsInt32();
                     break;
+                case "ZMSK":
+                    hidePartsBehind = record.AsBool();
+                    break;
             }
+        }
+
+        var properties = new Dictionary<string, object?>();
+        if (hidePartsBehind is not null)
+        {
+            properties[HidePartsBehindKey] = hidePartsBehind.Value;
         }
 
         return new VpxGameItem
@@ -86,6 +102,7 @@ public sealed class VpxGameItem : TableElement, ITimerElement
             RawType = itemType,
             TimerEnabled = timerEnabled,
             TimerIntervalMs = timerInterval,
+            Properties = properties,
         };
     }
 }

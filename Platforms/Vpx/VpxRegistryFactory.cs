@@ -56,6 +56,9 @@ public static class VpxRegistryFactory
         // 5. Built-in table rule: table name follows "Name (Manufacturer Year)".
         registry.AddTableRule(new WellFormedNameRule());
 
+        // 6. Built-in table rule: ball shadow primitives must not hide parts behind.
+        registry.AddTableRule(new BallShadowDepthMaskRule());
+
         return registry;
     }
 }

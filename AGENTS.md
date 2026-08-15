@@ -61,6 +61,7 @@ Platforms/Vpx/                     VPX platform adapter (lives in the app projec
   Rules/
 	DeclarativeElementRule.cs      Wraps ONE rules.json rule as an ITableRule (name/type/interval + severity). Deep.
 	WellFormedNameRule.cs          ITableRule (Quick): flags names not matching "Name (Manufacturer Year)".
+	BallShadowDepthMaskRule.cs     ITableRule (Deep): flags *shadow* primitives with "Hide parts behind" (ZMSK) checked.
 	DofLookupRule.cs               Opt-in ICollectionRule (Deep): table ROM vs DOF config.
 	PinupGameMatchRule.cs          Opt-in ICollectionRule (Quick): folder vs PinUP DB games.
 	PinupMetadataCheckRule.cs      Opt-in ICollectionRule (Deep): ROM/manufacturer/year/version vs PinUP DB.
