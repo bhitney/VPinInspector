@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using VPin.Inspector.Vps;
 using VPin.Inspector.Vpx.Pinup;
@@ -18,9 +19,13 @@ public sealed class MainForm : Form
     private readonly Button _matchButton = new() { Text = "Find Matches", AutoSize = true, Enabled = false };
     private readonly Button _applyButton = new() { Text = "Apply Selected (writes DB)", AutoSize = true, Enabled = false };
     private readonly Button _deselectAllButton = new() { Text = "Deselect All", AutoSize = true, Enabled = false };
+    private readonly Button _toggleUncheckedButton = new() { Text = "Hide Unchecked", AutoSize = true, Enabled = false };
     private readonly Button _undoButton = new() { Text = "Undo Last Apply", AutoSize = true, Enabled = false };
     private readonly DataGridView _gamesGrid = new();
     private readonly DataGridView _candidatesGrid = new();
+    private readonly TextBox _candidateSearchBox = new() { Width = 320 };
+    private readonly Button _candidateSearchClear = new() { Text = "Clear", AutoSize = true };
+    private readonly Label _candidatesHeader = new() { AutoSize = true, Padding = new Padding(0, 6, 6, 0), Text = "Search VPS:" };
     private readonly TextBox _log = new()
     {
         Multiline = true,
@@ -32,6 +37,8 @@ public sealed class MainForm : Form
     private readonly BindingList<GameMatch> _matches = new();
     private MatchEngine? _engine;
     private IReadOnlyList<WebGameIdChange>? _lastApplied;
+    private readonly UserSettings _settings;
+    private bool _hideUnchecked;
 
     public MainForm()
     {
@@ -41,8 +48,70 @@ public sealed class MainForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         _dbPathBox.Text = DefaultDbPath;
 
+        _settings = UserSettings.Load();
+        if (!string.IsNullOrWhiteSpace(_settings.DbPath))
+        {
+            _dbPathBox.Text = _settings.DbPath!;
+        }
+        if (!string.IsNullOrWhiteSpace(_settings.CsvPath))
+        {
+            _csvPathBox.Text = _settings.CsvPath!;
+        }
+
         BuildLayout();
         WireEvents();
+        ApplyDarkTheme();
+        ApplyWindowGeometry();
+    }
+
+    private void ApplyWindowGeometry()
+    {
+        if (_settings.WindowWidth is > 200 and int w &&
+            _settings.WindowHeight is > 200 and int h)
+        {
+            StartPosition = FormStartPosition.Manual;
+            Size = new Size(w, h);
+        }
+
+        if (_settings.WindowX is int x && _settings.WindowY is int y)
+        {
+            var proposed = new Rectangle(x, y, Width, Height);
+            if (Screen.AllScreens.Any(s => s.WorkingArea.IntersectsWith(proposed)))
+            {
+                StartPosition = FormStartPosition.Manual;
+                Location = new Point(x, y);
+            }
+        }
+
+        if (_settings.Maximized)
+        {
+            WindowState = FormWindowState.Maximized;
+        }
+    }
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        SaveSettings();
+        base.OnFormClosing(e);
+    }
+
+    private void SaveSettings()
+    {
+        _settings.Maximized = WindowState == FormWindowState.Maximized;
+
+        Rectangle bounds = WindowState == FormWindowState.Normal
+            ? Bounds
+            : RestoreBounds;
+
+        _settings.WindowX = bounds.X;
+        _settings.WindowY = bounds.Y;
+        _settings.WindowWidth = bounds.Width;
+        _settings.WindowHeight = bounds.Height;
+
+        _settings.DbPath = _dbPathBox.Text;
+        _settings.CsvPath = _csvPathBox.Text;
+
+        _settings.Save();
     }
 
     private void BuildLayout()
@@ -52,12 +121,12 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 4,
-            Padding = new Padding(8),
+            Padding = new Padding(8, 8, 8, 16),
         };
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 55));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 45));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 120));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 150));
 
         // --- Setup panel ---
         var setup = new TableLayoutPanel { AutoSize = true, ColumnCount = 3, Dock = DockStyle.Top };
@@ -85,6 +154,7 @@ public sealed class MainForm : Form
         emuRow.Controls.Add(_includePopulated);
         emuRow.Controls.Add(_loadEmulatorsButton);
         emuRow.Controls.Add(_matchButton);
+        emuRow.Controls.Add(_toggleUncheckedButton);
         setup.Controls.Add(emuRow, 1, 2);
         setup.SetColumnSpan(emuRow, 2);
 
@@ -99,7 +169,22 @@ public sealed class MainForm : Form
         // --- Candidates grid ---
         ConfigureCandidatesGrid();
         var candBox = new GroupBox { Text = "VPS candidates for selected game (double-click to choose)", Dock = DockStyle.Fill };
-        candBox.Controls.Add(_candidatesGrid);
+        var candLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+        };
+        candLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        candLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        var searchRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Dock = DockStyle.Top };
+        searchRow.Controls.Add(_candidatesHeader);
+        searchRow.Controls.Add(_candidateSearchBox);
+        searchRow.Controls.Add(_candidateSearchClear);
+        candLayout.Controls.Add(searchRow, 0, 0);
+        candLayout.Controls.Add(_candidatesGrid, 0, 1);
+        candBox.Controls.Add(candLayout);
         root.Controls.Add(candBox, 0, 2);
 
         // --- Bottom: actions + log ---
@@ -127,7 +212,18 @@ public sealed class MainForm : Form
         _gamesGrid.MultiSelect = false;
         _gamesGrid.RowHeadersVisible = false;
 
-        _gamesGrid.Columns.Add(new DataGridViewCheckBoxColumn { HeaderText = "Write", Name = "Write", Width = 50 });
+        _gamesGrid.Columns.Add(new DataGridViewCheckBoxColumn
+        {
+            HeaderText = "Write",
+            Name = "Write",
+            Width = 55,
+            ThreeState = true,
+            ReadOnly = true, // we cycle the state manually so review -> confirmed is one click
+            TrueValue = CheckState.Checked,
+            FalseValue = CheckState.Unchecked,
+            IndeterminateValue = CheckState.Indeterminate,
+            ToolTipText = "Unchecked = skip. Dash = needs review. Checked = will be written on Apply.",
+        });
         _gamesGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Game", Name = "Game", Width = 220, ReadOnly = true });
         _gamesGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Manufacturer", Name = "Manufacturer", Width = 110, ReadOnly = true });
         _gamesGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Year", Name = "Year", Width = 55, ReadOnly = true });
@@ -181,27 +277,70 @@ public sealed class MainForm : Form
         _matchButton.Click += (_, _) => FindMatches();
         _applyButton.Click += (_, _) => ApplyChanges();
         _deselectAllButton.Click += (_, _) => DeselectAll();
+        _toggleUncheckedButton.Click += (_, _) => ToggleUnchecked();
         _undoButton.Click += (_, _) => UndoChanges();
         _gamesGrid.SelectionChanged += (_, _) => ShowCandidates();
-        _gamesGrid.CellValueChanged += GamesGrid_CellValueChanged;
-        _gamesGrid.CurrentCellDirtyStateChanged += (_, _) =>
-        {
-            if (_gamesGrid.IsCurrentCellDirty)
-            {
-                _gamesGrid.CommitEdit(DataGridViewDataErrorContexts.Commit);
-            }
-        };
+        _gamesGrid.CellContentClick += GamesGrid_CellContentClick;
         _candidatesGrid.CellDoubleClick += CandidatesGrid_CellDoubleClick;
+        _candidateSearchBox.TextChanged += (_, _) => ShowCandidates();
+        _candidateSearchClear.Click += (_, _) => _candidateSearchBox.Clear();
+        _dbPathBox.Leave += (_, _) => PersistPathSettings();
+        _csvPathBox.Leave += (_, _) => PersistPathSettings();
     }
 
-    private void GamesGrid_CellValueChanged(object? sender, DataGridViewCellEventArgs e)
+    private void PersistPathSettings()
+    {
+        _settings.DbPath = _dbPathBox.Text;
+        _settings.CsvPath = _csvPathBox.Text;
+        _settings.Save();
+    }
+
+    private void GamesGrid_CellContentClick(object? sender, DataGridViewCellEventArgs e)
     {
         if (e.RowIndex < 0 || e.ColumnIndex != _gamesGrid.Columns["Write"]!.Index)
         {
             return;
         }
 
+        DataGridViewCell cell = _gamesGrid.Rows[e.RowIndex].Cells[e.ColumnIndex];
+        CheckState current = cell.Value switch
+        {
+            CheckState s => s,
+            true => CheckState.Checked,
+            false => CheckState.Unchecked,
+            _ => CheckState.Unchecked,
+        };
+
+        // Unchecked -> Checked, Indeterminate (review) -> Checked, Checked -> Unchecked.
+        cell.Value = current == CheckState.Checked ? CheckState.Unchecked : CheckState.Checked;
         UpdateApplyEnabled();
+
+        if (_hideUnchecked)
+        {
+            ApplyRowFilter();
+        }
+    }
+
+    private void ToggleUnchecked()
+    {
+        _hideUnchecked = !_hideUnchecked;
+        _toggleUncheckedButton.Text = _hideUnchecked ? "Show Unchecked" : "Hide Unchecked";
+        ApplyRowFilter();
+    }
+
+    /// <summary>
+    /// When hiding unchecked rows, only games in review (dash) or confirmed
+    /// (checked) state remain visible so the user can review just the matches.
+    /// </summary>
+    private void ApplyRowFilter()
+    {
+        _gamesGrid.CurrentCell = null;
+        foreach (DataGridViewRow row in _gamesGrid.Rows)
+        {
+            bool unchecked_ = row.Cells["Write"].Value is not CheckState.Checked
+                and not CheckState.Indeterminate;
+            row.Visible = !_hideUnchecked || !unchecked_;
+        }
     }
 
     private void PopulateGamesGrid()
@@ -209,8 +348,12 @@ public sealed class MainForm : Form
         _gamesGrid.Rows.Clear();
         foreach (GameMatch m in _matches)
         {
+            CheckState state = m.SelectedWebGameId is not null
+                ? CheckState.Indeterminate
+                : CheckState.Unchecked;
+
             int index = _gamesGrid.Rows.Add(
-                m.SelectedWebGameId is not null,
+                state,
                 m.Game.GameName,
                 m.Game.Manufacturer ?? string.Empty,
                 m.Game.Year ?? string.Empty,
@@ -222,6 +365,8 @@ public sealed class MainForm : Form
                 m.HasConfidentSuggestion ? "auto" : (m.Candidates.Count > 0 ? "review" : "none"));
             _gamesGrid.Rows[index].Tag = m;
         }
+
+        ApplyRowFilter();
     }
 
     private GameMatch? CurrentMatch =>
@@ -285,6 +430,7 @@ public sealed class MainForm : Form
 
             PopulateGamesGrid();
             _deselectAllButton.Enabled = matches.Count > 0;
+            _toggleUncheckedButton.Enabled = matches.Count > 0;
             int autos = matches.Count(m => m.HasConfidentSuggestion);
             Log($"Found {matches.Count} game(s); {autos} auto-suggested. Review before applying.");
             UpdateApplyEnabled();
@@ -297,6 +443,21 @@ public sealed class MainForm : Form
 
     private void ShowCandidates()
     {
+        string query = _candidateSearchBox.Text.Trim();
+
+        if (!string.IsNullOrEmpty(query))
+        {
+            if (_engine is null)
+            {
+                _candidatesGrid.DataSource = null;
+                return;
+            }
+
+            IReadOnlyList<VpsCandidate> hits = _engine.SearchAll(query);
+            _candidatesGrid.DataSource = new BindingList<VpsCandidate>(hits.ToList());
+            return;
+        }
+
         if (CurrentMatch is { } match)
         {
             _candidatesGrid.DataSource = new BindingList<VpsCandidate>(match.Candidates.ToList());
@@ -317,9 +478,9 @@ public sealed class MainForm : Form
         if (_candidatesGrid.Rows[e.RowIndex].DataBoundItem is VpsCandidate candidate)
         {
             match.SelectedWebGameId = candidate.WebGameId;
-            row.Cells["Write"].Value = true;
+            row.Cells["Write"].Value = CheckState.Checked;
             row.Cells["Selected"].Value = candidate.WebGameId;
-            Log($"Chose WEBGameID {candidate.WebGameId} for \"{match.Game.GameName}\".");
+            Log($"Chose WEBGameID {candidate.WebGameId} for \"{match.Game.GameName}\" (confirmed).");
             UpdateApplyEnabled();
         }
     }
@@ -334,7 +495,8 @@ public sealed class MainForm : Form
                 continue;
             }
 
-            bool write = row.Cells["Write"].Value is true;
+            bool write = row.Cells["Write"].Value is CheckState.Checked
+                or true; // legacy paranoia
             if (write && !string.IsNullOrWhiteSpace(m.SelectedWebGameId))
             {
                 pending.Add(new PendingWebGameIdWrite(m.GameKey, m.Game.GameName, m.SelectedWebGameId!));
@@ -350,10 +512,11 @@ public sealed class MainForm : Form
     {
         foreach (DataGridViewRow row in _gamesGrid.Rows)
         {
-            row.Cells["Write"].Value = false;
+            row.Cells["Write"].Value = CheckState.Unchecked;
         }
 
         UpdateApplyEnabled();
+        ApplyRowFilter();
     }
 
     private void ApplyChanges()
@@ -439,6 +602,7 @@ public sealed class MainForm : Form
             var progress = new Progress<string>(Log);
             await downloader.DownloadAllAsync(progress);
             _csvPathBox.Text = downloader.GetLocalPath("puplookup.csv");
+            PersistPathSettings();
             Log("Download complete.");
         }
         catch (Exception ex)
@@ -459,6 +623,7 @@ public sealed class MainForm : Form
         if (dlg.ShowDialog(this) == DialogResult.OK)
         {
             target.Text = dlg.FileName;
+            PersistPathSettings();
         }
     }
 
@@ -475,5 +640,137 @@ public sealed class MainForm : Form
     private sealed record EmulatorItem(int EmuId, string Name)
     {
         public override string ToString() => $"{Name} (id {EmuId})";
+    }
+
+    // ---- Dark theme ----
+
+    private static readonly Color DarkBack = Color.FromArgb(30, 30, 30);
+    private static readonly Color DarkPanel = Color.FromArgb(37, 37, 38);
+    private static readonly Color DarkGridBack = Color.FromArgb(24, 24, 24);
+    private static readonly Color DarkGridAlt = Color.FromArgb(32, 32, 32);
+    private static readonly Color DarkText = Color.FromArgb(220, 220, 220);
+    private static readonly Color DarkSubText = Color.FromArgb(180, 180, 180);
+    private static readonly Color DarkSelect = Color.FromArgb(0, 120, 215);
+    private static readonly Color DarkBorder = Color.FromArgb(60, 60, 60);
+    private static readonly Color DarkButtonBack = Color.FromArgb(51, 51, 55);
+
+    private void ApplyDarkTheme()
+    {
+        BackColor = DarkBack;
+        ForeColor = DarkText;
+        EnableWindowDarkTitleBar(Handle);
+
+        ThemeControlTree(this);
+        ThemeGrid(_gamesGrid);
+        ThemeGrid(_candidatesGrid);
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        EnableWindowDarkTitleBar(Handle);
+    }
+
+    private void ThemeControlTree(Control root)
+    {
+        foreach (Control c in root.Controls)
+        {
+            ThemeControl(c);
+            if (c.HasChildren)
+            {
+                ThemeControlTree(c);
+            }
+        }
+    }
+
+    private void ThemeControl(Control c)
+    {
+        switch (c)
+        {
+            case Button b:
+                b.FlatStyle = FlatStyle.Flat;
+                b.FlatAppearance.BorderColor = DarkBorder;
+                b.BackColor = DarkButtonBack;
+                b.ForeColor = DarkText;
+                break;
+            case TextBox tb:
+                tb.BackColor = DarkGridBack;
+                tb.ForeColor = DarkText;
+                tb.BorderStyle = BorderStyle.FixedSingle;
+                break;
+            case ComboBox cb:
+                cb.FlatStyle = FlatStyle.Flat;
+                cb.BackColor = DarkGridBack;
+                cb.ForeColor = DarkText;
+                break;
+            case CheckBox cx:
+                cx.BackColor = Color.Transparent;
+                cx.ForeColor = DarkText;
+                break;
+            case GroupBox gb:
+                gb.BackColor = DarkBack;
+                gb.ForeColor = DarkText;
+                break;
+            case Label lbl:
+                lbl.BackColor = Color.Transparent;
+                lbl.ForeColor = DarkText;
+                break;
+            case DataGridView:
+                // handled by ThemeGrid
+                break;
+            default:
+                c.BackColor = DarkBack;
+                c.ForeColor = DarkText;
+                break;
+        }
+    }
+
+    private static void ThemeGrid(DataGridView g)
+    {
+        g.EnableHeadersVisualStyles = false;
+        g.BackgroundColor = DarkGridBack;
+        g.GridColor = DarkBorder;
+        g.BorderStyle = BorderStyle.FixedSingle;
+        g.ForeColor = DarkText;
+
+        g.DefaultCellStyle.BackColor = DarkGridBack;
+        g.DefaultCellStyle.ForeColor = DarkText;
+        g.DefaultCellStyle.SelectionBackColor = DarkSelect;
+        g.DefaultCellStyle.SelectionForeColor = Color.White;
+
+        g.AlternatingRowsDefaultCellStyle.BackColor = DarkGridAlt;
+        g.AlternatingRowsDefaultCellStyle.ForeColor = DarkText;
+
+        g.ColumnHeadersDefaultCellStyle.BackColor = DarkPanel;
+        g.ColumnHeadersDefaultCellStyle.ForeColor = DarkText;
+        g.ColumnHeadersDefaultCellStyle.SelectionBackColor = DarkPanel;
+        g.ColumnHeadersDefaultCellStyle.SelectionForeColor = DarkText;
+
+        g.RowHeadersDefaultCellStyle.BackColor = DarkPanel;
+        g.RowHeadersDefaultCellStyle.ForeColor = DarkText;
+    }
+
+    // Windows 11 / Win10 20H1+ immersive dark-mode title bar.
+    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+
+    private static void EnableWindowDarkTitleBar(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero)
+        {
+            return;
+        }
+
+        try
+        {
+            int useDark = 1;
+            DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDark, sizeof(int));
+        }
+        catch
+        {
+            // Older Windows without dark title bar support — ignore.
+        }
     }
 }

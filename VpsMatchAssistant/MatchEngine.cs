@@ -50,14 +50,83 @@ public sealed class MatchEngine
     };
 
     private readonly PupLookupIndex _index;
+    private readonly PupLookupTable _lookup;
 
-    private MatchEngine(PupLookupIndex index) => _index = index;
+    private MatchEngine(PupLookupIndex index, PupLookupTable lookup)
+    {
+        _index = index;
+        _lookup = lookup;
+    }
 
     /// <summary>Loads the CSV and builds the match index.</summary>
     public static MatchEngine Load(string csvPath)
     {
         PupLookupTable lookup = PupLookupTable.Load(csvPath, LookupColumns);
-        return new MatchEngine(PupLookupIndex.Build(lookup));
+        return new MatchEngine(PupLookupIndex.Build(lookup), lookup);
+    }
+
+    /// <summary>
+    /// Free-text search across the entire VPS reference table. Matches (case-
+    /// insensitive substring) against GameName, Manufact, GameYear and Author.
+    /// All whitespace-separated tokens must be found in at least one field.
+    /// </summary>
+    public IReadOnlyList<VpsCandidate> SearchAll(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return Array.Empty<VpsCandidate>();
+        }
+
+        string[] tokens = query.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length == 0)
+        {
+            return Array.Empty<VpsCandidate>();
+        }
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var results = new List<VpsCandidate>();
+
+        foreach (PupLookupRow r in _lookup.Rows)
+        {
+            string web = r.Get(PupLookupIndex.WebGameIdColumn) ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(web) || !seen.Add(web))
+            {
+                continue;
+            }
+
+            string haystack = string.Join(
+                '\u0001',
+                r.Get("GameName") ?? string.Empty,
+                r.Get("Manufact") ?? string.Empty,
+                r.Get("GameYear") ?? string.Empty,
+                r.Get("Author") ?? string.Empty);
+
+            bool allMatch = tokens.All(t =>
+                haystack.Contains(t, StringComparison.OrdinalIgnoreCase));
+
+            if (!allMatch)
+            {
+                continue;
+            }
+
+            results.Add(new VpsCandidate(
+                WebGameId: web,
+                GameName: r.Get("GameName") ?? string.Empty,
+                Manufacturer: r.Get("Manufact"),
+                Year: r.Get("GameYear"),
+                Version: r.Get("GAMEVER"),
+                Author: r.Get("Author"),
+                Score: 0.0));
+
+            if (results.Count >= 500)
+            {
+                break;
+            }
+        }
+
+        return results
+            .OrderBy(c => c.GameName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     /// <summary>
