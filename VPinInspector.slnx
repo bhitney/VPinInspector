@@ -1,4 +1,6 @@
 <Solution>
   <Project Path="Core/VPinInspector.Core.csproj" />
+  <Project Path="VpsShared/VpsShared.csproj" />
   <Project Path="VPinInspector.csproj" />
+  <Project Path="VpsMatchAssistant/VpsMatchAssistant.csproj" />
 </Solution>

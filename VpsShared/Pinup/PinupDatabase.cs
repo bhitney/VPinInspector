@@ -23,7 +23,23 @@ public sealed record PinupGameIdentity(
     string? Year,
     string? Version,
     string? WebGameId,
-    bool Visible);
+    bool Visible)
+{
+    /// <summary>The game's author, when the Games table has an author column.</summary>
+    public string? Author { get; init; }
+
+    /// <summary>When the game record was last updated (DateUpdated), when present.</summary>
+    public string? DateUpdated { get; init; }
+
+    /// <summary>When the game file was last updated (DateFileUpdated), when present.</summary>
+    public string? DateFileUpdated { get; init; }
+}
+
+/// <summary>
+/// A <see cref="PinupGameIdentity"/> paired with the primary-key value of its row
+/// in the PinUP Popper Games table, so a writer can target that exact row.
+/// </summary>
+public sealed record PinupGameIdentityKeyed(long GameKey, PinupGameIdentity Identity);
 
 /// <summary>
 /// A game's descriptive metadata as recorded in the PinUP Popper Games table:
@@ -282,6 +298,180 @@ public sealed class PinupDatabase : IDisposable
         }
 
         return list;
+    }
+
+    /// <summary>
+    /// Resolves the primary-key column of the Games table (typically GameID) by
+    /// inspecting the schema. Falls back to "GameID" when no PK flag is found.
+    /// </summary>
+    public string ResolveGamesPrimaryKeyColumn()
+    {
+        return ResolveGamesPrimaryKeyColumn(_connection);
+    }
+
+    /// <summary>
+    /// Resolves the Games-table primary key column for the given open connection.
+    /// </summary>
+    public static string ResolveGamesPrimaryKeyColumn(SqliteConnection connection)
+    {
+        using SqliteCommand cmd = connection.CreateCommand();
+        cmd.CommandText = "PRAGMA table_info('Games')";
+
+        string? fallback = null;
+        using SqliteDataReader reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            // Columns: cid, name, type, notnull, dflt_value, pk
+            string name = reader.IsDBNull(1) ? string.Empty : reader.GetString(1);
+            long pk = reader.IsDBNull(5) ? 0 : reader.GetInt64(5);
+            if (pk > 0)
+            {
+                return name;
+            }
+
+            if (fallback is null && string.Equals(name, "GameID", StringComparison.OrdinalIgnoreCase))
+            {
+                fallback = name;
+            }
+        }
+
+        return fallback ?? "GameID";
+    }
+
+    /// <summary>
+    /// Returns game identities for the given emulator IDs, each paired with the
+    /// Games-table primary-key value so a writer can target the exact row.
+    /// </summary>
+    public IReadOnlyList<PinupGameIdentityKeyed> GetGameIdentitiesWithKey(IReadOnlyCollection<int> emulatorIds)
+    {
+        var list = new List<PinupGameIdentityKeyed>();
+        if (emulatorIds.Count == 0)
+        {
+            return list;
+        }
+
+        string pkColumn = ResolveGamesPrimaryKeyColumn();
+        string? authorColumn = ResolveGamesColumn("AUTHOR", "Author", "GameAuthor");
+        string? dateUpdatedColumn = ResolveGamesColumn("DateUpdated");
+        string? dateFileUpdatedColumn = ResolveGamesColumn("DateFileUpdated");
+        var paramNames = emulatorIds.Select((_, i) => "@e" + i).ToList();
+
+        var extraColumns = new List<string>();
+        if (authorColumn is not null) extraColumns.Add(authorColumn);
+        if (dateUpdatedColumn is not null) extraColumns.Add(dateUpdatedColumn);
+        if (dateFileUpdatedColumn is not null) extraColumns.Add(dateFileUpdatedColumn);
+
+        int authorOrdinal = authorColumn is null ? -1 : 9;
+        int dateUpdatedOrdinal = dateUpdatedColumn is null ? -1 : 9 + (authorColumn is null ? 0 : 1);
+        int dateFileUpdatedOrdinal = dateFileUpdatedColumn is null
+            ? -1
+            : 9 + (authorColumn is null ? 0 : 1) + (dateUpdatedColumn is null ? 0 : 1);
+
+        string extraSelect = extraColumns.Count == 0
+            ? string.Empty
+            : ", " + string.Join(", ", extraColumns.Select(c => $"\"{c}\""));
+
+        using SqliteCommand cmd = _connection.CreateCommand();
+        cmd.CommandText =
+            $"SELECT \"{pkColumn}\", EMUID, GameName, GameFileName, Manufact, GameYear, GAMEVER, WEBGameID, Visible{extraSelect} FROM Games " +
+            $"WHERE EMUID IN ({string.Join(", ", paramNames)}) " +
+            "ORDER BY GameName ASC";
+
+        int index = 0;
+        foreach (int id in emulatorIds)
+        {
+            cmd.Parameters.AddWithValue(paramNames[index++], id);
+        }
+
+        using SqliteDataReader reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            var identity = new PinupGameIdentity(
+                EmuId: reader.IsDBNull(1) ? 0 : reader.GetInt32(1),
+                GameName: reader.IsDBNull(2) ? string.Empty : reader.GetString(2),
+                GameFileName: reader.IsDBNull(3) ? string.Empty : reader.GetString(3),
+                Manufacturer: ReadTrimmed(reader, 4),
+                Year: ReadTrimmed(reader, 5),
+                Version: ReadTrimmed(reader, 6),
+                WebGameId: ReadTrimmed(reader, 7),
+                Visible: !reader.IsDBNull(8) && reader.GetInt32(8) != 0)
+            {
+                Author = authorOrdinal < 0 ? null : ReadTrimmed(reader, authorOrdinal),
+                DateUpdated = dateUpdatedOrdinal < 0 ? null : ReadDate(reader, dateUpdatedOrdinal),
+                DateFileUpdated = dateFileUpdatedOrdinal < 0 ? null : ReadDate(reader, dateFileUpdatedOrdinal),
+            };
+
+            long key = reader.IsDBNull(0) ? 0 : reader.GetInt64(0);
+            list.Add(new PinupGameIdentityKeyed(key, identity));
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    /// Reads a date-ish column and formats it as a short date (no time). Accepts
+    /// stored DateTime values, ISO strings, or unix seconds; returns the raw
+    /// trimmed value when it cannot be parsed.
+    /// </summary>
+    private static string? ReadDate(SqliteDataReader reader, int ordinal)
+    {
+        if (reader.IsDBNull(ordinal))
+        {
+            return null;
+        }
+
+        object value = reader.GetValue(ordinal);
+
+        if (value is DateTime dt)
+        {
+            return dt.ToShortDateString();
+        }
+
+        if (value is long or int or double)
+        {
+            double seconds = Convert.ToDouble(value);
+            // Popper stores several date columns as unix seconds.
+            return DateTimeOffset.FromUnixTimeSeconds((long)seconds).LocalDateTime.ToShortDateString();
+        }
+
+        string raw = value.ToString()?.Trim() ?? string.Empty;
+        if (raw.Length == 0)
+        {
+            return null;
+        }
+
+        return DateTime.TryParse(raw, out DateTime parsed) ? parsed.ToShortDateString() : raw;
+    }
+
+    /// <summary>
+    /// Returns the first of the given candidate column names that exists on the
+    /// Games table (case-insensitive), or null when none are present.
+    /// </summary>
+    private string? ResolveGamesColumn(params string[] candidateNames)
+    {
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (SqliteCommand cmd = _connection.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA table_info('Games')";
+            using SqliteDataReader reader = cmd.ExecuteReader();
+            while (reader.Read())
+            {
+                if (!reader.IsDBNull(1))
+                {
+                    existing.Add(reader.GetString(1));
+                }
+            }
+        }
+
+        foreach (string name in candidateNames)
+        {
+            if (existing.Contains(name))
+            {
+                return name;
+            }
+        }
+
+        return null;
     }
 
     public void Dispose() => _connection.Dispose();

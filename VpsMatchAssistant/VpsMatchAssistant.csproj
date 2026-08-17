@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+	<OutputType>WinExe</OutputType>
+	<TargetFramework>net10.0-windows</TargetFramework>
+	<RootNamespace>VPin.MatchAssistant</RootNamespace>
+	<AssemblyName>VpsMatchAssistant</AssemblyName>
+	<ImplicitUsings>enable</ImplicitUsings>
+	<Nullable>enable</Nullable>
+	<UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <ItemGroup>
+	<ProjectReference Include="..\VpsShared\VpsShared.csproj" />
+  </ItemGroup>
+
+</Project>

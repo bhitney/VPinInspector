@@ -12,6 +12,8 @@
 
   <ItemGroup>
     <None Include="Core\VPinInspector.Core.csproj" />
+    <None Include="VpsMatchAssistant\VpsMatchAssistant.csproj" />
+    <None Include="VpsShared\VpsShared.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,10 +25,13 @@
   <!-- Core is compiled by its own class library; exclude it from the app glob. -->
   <ItemGroup>
     <Compile Remove="Core\**\*.cs" />
+    <Compile Remove="VpsShared\**\*.cs" />
+    <Compile Remove="VpsMatchAssistant\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="Core\VPinInspector.Core.csproj" />
+    <ProjectReference Include="VpsShared\VpsShared.csproj" />
   </ItemGroup>
 
   <ItemGroup>
