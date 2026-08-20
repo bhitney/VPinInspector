@@ -4,7 +4,7 @@ namespace VPin.MatchAssistant;
 
 /// <summary>
 /// Persisted user preferences (window geometry, last-used paths). Stored as JSON
-/// under %AppData%\VpsMatchAssistant\settings.json.
+/// as settings.json in the application folder.
 /// </summary>
 public sealed class UserSettings
 {
@@ -23,8 +23,7 @@ public sealed class UserSettings
     };
 
     public static string SettingsPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "VpsMatchAssistant",
+        AppContext.BaseDirectory,
         "settings.json");
 
     public static UserSettings Load()

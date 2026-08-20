@@ -209,8 +209,9 @@ public sealed class MainForm : Form
         _gamesGrid.AllowUserToAddRows = false;
         _gamesGrid.AllowUserToDeleteRows = false;
         _gamesGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-        _gamesGrid.MultiSelect = false;
+        _gamesGrid.MultiSelect = true;
         _gamesGrid.RowHeadersVisible = false;
+        _gamesGrid.ContextMenuStrip = BuildGamesContextMenu();
 
         _gamesGrid.Columns.Add(new DataGridViewCheckBoxColumn
         {
@@ -235,6 +236,53 @@ public sealed class MainForm : Form
         _gamesGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Suggestion", Name = "Suggestion", Width = 90, ReadOnly = true });
 
         EnableFillColumns(_gamesGrid);
+    }
+
+    private ContextMenuStrip BuildGamesContextMenu()
+    {
+        var menu = new ContextMenuStrip();
+        var confirm = new ToolStripMenuItem("Confirm Selected");
+        confirm.Click += (_, _) => SetSelectedRowsState(CheckState.Checked);
+        var skip = new ToolStripMenuItem("Skip Selected");
+        skip.Click += (_, _) => SetSelectedRowsState(CheckState.Unchecked);
+        menu.Items.Add(confirm);
+        menu.Items.Add(skip);
+        return menu;
+    }
+
+    /// <summary>
+    /// Applies a Write state to every selected row that has a suggested WEBGameID.
+    /// Rows without a suggestion can't be written, so they are skipped.
+    /// </summary>
+    private void SetSelectedRowsState(CheckState state)
+    {
+        bool changed = false;
+        foreach (DataGridViewRow row in _gamesGrid.SelectedRows)
+        {
+            if (row.Tag is not GameMatch match)
+            {
+                continue;
+            }
+
+            if (state == CheckState.Checked && string.IsNullOrWhiteSpace(match.SelectedWebGameId))
+            {
+                continue;
+            }
+
+            row.Cells["Write"].Value = state;
+            changed = true;
+        }
+
+        if (!changed)
+        {
+            return;
+        }
+
+        UpdateApplyEnabled();
+        if (_hideUnchecked)
+        {
+            ApplyRowFilter();
+        }
     }
 
     private void ConfigureCandidatesGrid()
@@ -281,6 +329,8 @@ public sealed class MainForm : Form
         _undoButton.Click += (_, _) => UndoChanges();
         _gamesGrid.SelectionChanged += (_, _) => ShowCandidates();
         _gamesGrid.CellContentClick += GamesGrid_CellContentClick;
+        _gamesGrid.CellMouseDown += GamesGrid_CellMouseDown;
+        _gamesGrid.KeyDown += GamesGrid_KeyDown;
         _candidatesGrid.CellDoubleClick += CandidatesGrid_CellDoubleClick;
         _candidateSearchBox.TextChanged += (_, _) => ShowCandidates();
         _candidateSearchClear.Click += (_, _) => _candidateSearchBox.Clear();
@@ -295,6 +345,23 @@ public sealed class MainForm : Form
         _settings.Save();
     }
 
+    private void GamesGrid_CellMouseDown(object? sender, DataGridViewCellMouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Right || e.RowIndex < 0)
+        {
+            return;
+        }
+
+        // Only reset the selection when right-clicking outside the current
+        // selection; clicking within it keeps the multi-selection for the menu.
+        if (!_gamesGrid.Rows[e.RowIndex].Selected)
+        {
+            _gamesGrid.ClearSelection();
+            _gamesGrid.Rows[e.RowIndex].Selected = true;
+            _gamesGrid.CurrentCell = _gamesGrid.Rows[e.RowIndex].Cells[Math.Max(0, e.ColumnIndex)];
+        }
+    }
+
     private void GamesGrid_CellContentClick(object? sender, DataGridViewCellEventArgs e)
     {
         if (e.RowIndex < 0 || e.ColumnIndex != _gamesGrid.Columns["Write"]!.Index)
@@ -302,7 +369,37 @@ public sealed class MainForm : Form
             return;
         }
 
-        DataGridViewCell cell = _gamesGrid.Rows[e.RowIndex].Cells[e.ColumnIndex];
+        ToggleRowWriteState(_gamesGrid.Rows[e.RowIndex]);
+    }
+
+    private void GamesGrid_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.KeyCode != Keys.Space)
+        {
+            return;
+        }
+
+        bool changed = false;
+        foreach (DataGridViewRow row in _gamesGrid.SelectedRows)
+        {
+            changed |= ToggleRowWriteState(row);
+        }
+
+        if (changed)
+        {
+            // Suppress the default space handling so it doesn't re-toggle the cell.
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        }
+    }
+
+    /// <summary>
+    /// Cycles a row's Write checkbox the same way clicking it does:
+    /// Unchecked/Indeterminate (review) -> Checked, Checked -> Unchecked.
+    /// </summary>
+    private bool ToggleRowWriteState(DataGridViewRow row)
+    {
+        DataGridViewCell cell = row.Cells["Write"];
         CheckState current = cell.Value switch
         {
             CheckState s => s,
@@ -311,7 +408,6 @@ public sealed class MainForm : Form
             _ => CheckState.Unchecked,
         };
 
-        // Unchecked -> Checked, Indeterminate (review) -> Checked, Checked -> Unchecked.
         cell.Value = current == CheckState.Checked ? CheckState.Unchecked : CheckState.Checked;
         UpdateApplyEnabled();
 
@@ -319,6 +415,8 @@ public sealed class MainForm : Form
         {
             ApplyRowFilter();
         }
+
+        return true;
     }
 
     private void ToggleUnchecked()
