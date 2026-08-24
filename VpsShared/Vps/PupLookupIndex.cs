@@ -88,6 +88,22 @@ public sealed class PupLookupIndex
     }
 
     /// <summary>
+    /// Matches a Popper game to VPS rows strictly by VPS WEBGameID, with no fuzzy
+    /// fallback. Returns <c>null</c> when the game has no WEBGameID or the CSV has
+    /// no row for it. Used by rules that only trust the definitive id key.
+    /// </summary>
+    public PupMatchResult? MatchByWebGameId(PinupGameIdentity game)
+    {
+        if (!string.IsNullOrWhiteSpace(game.WebGameId) &&
+            _byWebGameId.TryGetValue(game.WebGameId.Trim(), out List<PupLookupRow>? byId))
+        {
+            return new PupMatchResult(PupMatchKind.WebGameId, byId, byId[0].Get("GameName"), 1d);
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Matches a Popper game to VPS rows using the WEBGameID key first, then the
     /// manufacturer/year + fuzzy-name fallback.
     /// </summary>

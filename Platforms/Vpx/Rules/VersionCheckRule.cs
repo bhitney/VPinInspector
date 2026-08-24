@@ -6,14 +6,19 @@ using VPin.Inspector.Vpx.Rules;
 namespace VPin.Inspector.Platforms.Vpx.Rules;
 
 /// <summary>
-/// Opt-in collection rule ("Version Check"): for each PinUP Popper game, finds
-/// the matching VPS <c>puplookup.csv</c> rows (same manufacturer + year, fuzzy
-/// name) and compares the local version (Popper GAMEVER) against the newest
-/// online version. Version mismatches are reported in three buckets:
+/// Opt-in collection rule ("Version Check"): for each PinUP Popper game that has
+/// a VPS <c>WEBGameID</c>, finds the matching VPS <c>puplookup.csv</c> row(s) by
+/// that id and compares the local version (Popper GAMEVER) against the newest
+/// online version. Games without a WEBGameID are ignored — this rule trusts only
+/// the definitive id key, never a fuzzy manufacturer/year/name guess. Version
+/// comparison is format-tolerant, so "1.0" and "1.0.0" match. Mismatches are
+/// reported in three buckets:
 /// <list type="bullet">
-/// <item>online (internet/VPS) is newer than local — most actionable;</item>
-/// <item>local (PupDatabase) is newer than online;</item>
-/// <item>versions differ but ordering is unknown.</item>
+/// <item>online (internet/VPS) is newer than local — an update is available;</item>
+/// <item>local (PupDatabase) is newer than online — likely an in-development or
+/// unreleased table, or a possible error;</item>
+/// <item>versions differ but ordering is unknown (dissimilar formats, e.g.
+/// "1.1" vs "version2").</item>
 /// </list>
 /// This is distinct from <c>pup-hygiene</c> (which is about matchability); it
 /// assumes matching works and focuses only on version drift.
@@ -23,8 +28,6 @@ namespace VPin.Inspector.Platforms.Vpx.Rules;
 /// </summary>
 public sealed class VersionCheckRule : ICollectionRule
 {
-    private const double MatchThreshold = 0.5;
-
     private static readonly IReadOnlyList<string> Columns =
         new[] { "GameName", "Manufact", "GameYear", "GAMEVER", "WEBGameID" };
 
@@ -114,8 +117,9 @@ public sealed class VersionCheckRule : ICollectionRule
             games = games.Where(g => g.Visible).ToList();
         }
 
+        int withWebId = 0;
         int compared = 0;
-        int webIdMatches = 0;
+        int webIdNotInVps = 0;
 
         // Collect findings into buckets so the summary can present them grouped:
         // VPS newer first (most actionable), then local newer, then unknown.
@@ -126,18 +130,18 @@ public sealed class VersionCheckRule : ICollectionRule
 
         foreach (PinupGameIdentity game in games
             .Where(g => !string.IsNullOrWhiteSpace(g.GameName))
+            .Where(g => !string.IsNullOrWhiteSpace(g.WebGameId))
             .OrderBy(g => g.GameName, StringComparer.OrdinalIgnoreCase))
         {
-            PupMatchResult match = index.Match(game, MatchThreshold);
-            if (!match.Matched)
-            {
-                // No matchable VPS entry: that's pup-hygiene's concern, not ours.
-                continue;
-            }
+            // Only games carrying a VPS WEBGameID are considered; matching is by
+            // that id alone (no fuzzy fallback). Everything else is ignored.
+            withWebId++;
 
-            if (match.Kind == PupMatchKind.WebGameId)
+            PupMatchResult? match = index.MatchByWebGameId(game);
+            if (match is null)
             {
-                webIdMatches++;
+                webIdNotInVps++;
+                continue;
             }
 
             // Among the matched rows, pick the newest online version.
@@ -161,7 +165,7 @@ public sealed class VersionCheckRule : ICollectionRule
 
             if (onlineVersion is null)
             {
-                // Matched a manufacturer/year but no named+versioned VPS row.
+                // Matched by WEBGameID but no versioned VPS row.
                 continue;
             }
 
@@ -212,22 +216,32 @@ public sealed class VersionCheckRule : ICollectionRule
         }
 
         AppendBucket(findings, "VPS/internet is newer (update available)", onlineNewer);
-        AppendBucket(findings, "PupDatabase/local is newer than VPS", localNewer);
+        AppendBucket(findings, "PupDatabase/local is newer than VPS (in development?)", localNewer);
         AppendBucket(findings, "Version differs (can't tell which is newer)", unknown);
         AppendBucket(findings, "No local version recorded", missingLocal);
+
+        if (withWebId == 0)
+        {
+            findings.Add(new Finding(
+                Id,
+                FindingSeverity.Info,
+                "No games have a WEBGameID; nothing to version-check."));
+            return findings;
+        }
 
         if (findings.Count == 0)
         {
             findings.Add(new Finding(
                 Id,
                 FindingSeverity.Info,
-                $"All {compared} matched game(s) are on the current VPS version."));
+                $"All {compared} WEBGameID-matched game(s) are on the current VPS version."));
         }
 
         findings.Insert(0, new Finding(
             Id,
             FindingSeverity.Info,
-            $"Matched by WEBGameID: {webIdMatches} of {compared} compared game(s)."));
+            $"WEBGameID games: {withWebId}; version-compared against VPS: {compared}; " +
+            $"WEBGameID not found in VPS: {webIdNotInVps}."));
 
         return findings;
     }

@@ -57,8 +57,11 @@ public static partial class VersionComparer
             return VersionComparison.Equal;
         }
 
-        int[]? lNums = ExtractBackbone(l);
-        int[]? oNums = ExtractBackbone(o);
+        Match lMatch = NumericBackboneRegex().Match(l);
+        Match oMatch = NumericBackboneRegex().Match(o);
+
+        int[]? lNums = ExtractBackbone(lMatch);
+        int[]? oNums = ExtractBackbone(oMatch);
 
         if (lNums is not null && oNums is not null)
         {
@@ -73,9 +76,14 @@ public static partial class VersionComparer
                 return VersionComparison.LocalNewer;
             }
 
-            // Numeric backbones tie: differ only by suffix/prefix text (e.g.
-            // "1.0" vs "1.0f"). We can't reliably order a build/beta suffix.
-            return VersionComparison.Unknown;
+            // Numeric backbones tie. Missing trailing segments are treated as
+            // zero, so "1.0" and "1.0.0" tie here. Treat that as Equal when the
+            // non-numeric remainder also matches; otherwise the strings differ
+            // only by a build/beta suffix (e.g. "1.0" vs "1.0f") which we can't
+            // reliably order.
+            return ResiduesMatch(l, lMatch, o, oMatch)
+                ? VersionComparison.Equal
+                : VersionComparison.Unknown;
         }
 
         // One or both lack any numeric backbone; treat as an unorderable diff.
@@ -84,9 +92,8 @@ public static partial class VersionComparer
 
     private static string Normalize(string? value) => value?.Trim() ?? string.Empty;
 
-    private static int[]? ExtractBackbone(string value)
+    private static int[]? ExtractBackbone(Match match)
     {
-        Match match = NumericBackboneRegex().Match(value);
         if (!match.Success)
         {
             return null;
@@ -104,6 +111,17 @@ public static partial class VersionComparer
 
         return numbers;
     }
+
+    /// <summary>
+    /// True when the text surrounding the numeric backbone is equivalent, so two
+    /// versions that tie numerically (e.g. "1.0" vs "1.0.0") are considered equal
+    /// while ones with a distinguishing suffix (e.g. "1.0" vs "1.0f") are not.
+    /// </summary>
+    private static bool ResiduesMatch(string local, Match localMatch, string online, Match onlineMatch) =>
+        string.Equals(Residue(local, localMatch), Residue(online, onlineMatch), StringComparison.OrdinalIgnoreCase);
+
+    private static string Residue(string value, Match match) =>
+        (value[..match.Index] + value[(match.Index + match.Length)..]).Trim();
 
     /// <summary>
     /// Compares two numeric segment arrays. Returns &gt;0 when <paramref name="a"/>
