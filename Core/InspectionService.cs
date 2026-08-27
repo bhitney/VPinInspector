@@ -22,6 +22,13 @@ public sealed class ScanOptions
     public double MaxRunTimeSeconds { get; init; }
 
     /// <summary>
+    /// Maximum number of tables parsed concurrently. Zero or negative = use
+    /// <see cref="Environment.ProcessorCount"/>; 1 = single-threaded. The report
+    /// order is independent of this value.
+    /// </summary>
+    public int MaxDegreeOfParallelism { get; init; }
+
+    /// <summary>
     /// When set, exactly these files are scanned (folder discovery is skipped).
     /// Used to rescan a subset such as the previously-flagged tables.
     /// </summary>
@@ -92,32 +99,76 @@ public sealed class InspectionService
         options ??= new ScanOptions();
 
         var files = ResolveFiles(inputPath, options);
-        var tableReports = new List<TableReport>(files.Count);
-        var contexts = new List<TableContext>(files.Count);
 
         // Only pay for the expensive body parse when a selected rule needs it.
         bool needsDeep = RequiresDeepAnalysis(options);
+
+        // Results are written by index so the report order matches file order
+        // (alphabetical), regardless of the order tables finish in parallel.
+        var reportsByIndex = new TableReport?[files.Count];
+        var contextsByIndex = new TableContext?[files.Count];
 
         Stopwatch? stopwatch = options.MaxRunTimeSeconds > 0
             ? Stopwatch.StartNew()
             : null;
 
-        for (int i = 0; i < files.Count; i++)
+        int degree = options.MaxDegreeOfParallelism > 0
+            ? options.MaxDegreeOfParallelism
+            : Environment.ProcessorCount;
+
+        int completed = 0;
+        object gate = new();
+
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = Math.Max(1, degree),
+            CancellationToken = cancellationToken,
+        };
+
+        Parallel.For(0, files.Count, parallelOptions, (i, state) =>
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            TableReport report = ScanSingle(files[i], options.SelectedRuleIds, needsDeep, out TableContext? context);
-            tableReports.Add(report);
-            if (context is not null)
+            if (stopwatch is not null && stopwatch.Elapsed.TotalSeconds >= options.MaxRunTimeSeconds)
             {
-                contexts.Add(context);
+                state.Stop();
+                return;
             }
 
-            onTable?.Invoke(report, i + 1, files.Count);
+            TableReport report = ScanSingle(files[i], options.SelectedRuleIds, needsDeep, out TableContext? context);
+            reportsByIndex[i] = report;
+            contextsByIndex[i] = context;
+
+            // The streaming callback fires as each table finishes (log order may
+            // interleave); the final ordered report is assembled below.
+            if (onTable is not null)
+            {
+                lock (gate)
+                {
+                    completed++;
+                    onTable(report, completed, files.Count);
+                }
+            }
 
             if (stopwatch is not null && stopwatch.Elapsed.TotalSeconds >= options.MaxRunTimeSeconds)
             {
-                break;
+                state.Stop();
+            }
+        });
+
+        // Assemble in file order, skipping any slots left empty by an early stop.
+        var tableReports = new List<TableReport>(files.Count);
+        var contexts = new List<TableContext>(files.Count);
+        for (int i = 0; i < files.Count; i++)
+        {
+            if (reportsByIndex[i] is { } report)
+            {
+                tableReports.Add(report);
+            }
+
+            if (contextsByIndex[i] is { } context)
+            {
+                contexts.Add(context);
             }
         }
 

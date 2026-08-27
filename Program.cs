@@ -69,6 +69,7 @@ static int RunConsole(string[] args)
     {
         ExcludePatterns = engine.Settings.ExcludePatterns,
         MaxRunTimeSeconds = engine.Settings.MaxRunTimeSeconds,
+        MaxDegreeOfParallelism = engine.Settings.MaxDegreeOfParallelism,
     };
 
     IReadOnlyList<string> vpxFiles = service.ResolveFiles(inputPath, options);

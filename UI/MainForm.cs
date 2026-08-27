@@ -821,6 +821,7 @@ public sealed class MainForm : Form
             SelectedRuleIds = selectedIds,
             ExcludePatterns = settings.ExcludePatterns,
             MaxRunTimeSeconds = settings.MaxRunTimeSeconds,
+            MaxDegreeOfParallelism = settings.MaxDegreeOfParallelism,
             ExplicitFiles = mode == ScanMode.FlaggedOnly ? files : null,
             // Collection rules only make sense on a full folder scan.
             RunCollectionRules = mode == ScanMode.Full,

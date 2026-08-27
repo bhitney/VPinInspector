@@ -28,6 +28,16 @@ public sealed class InspectionSettings
     public double MaxRunTimeSeconds { get; init; }
 
     /// <summary>
+    /// Maximum number of tables parsed concurrently. Table parsing and rule
+    /// evaluation are independent per file, so scanning a folder scales well
+    /// across cores/NVMe. Zero or negative = use <see cref="Environment.ProcessorCount"/>;
+    /// 1 = the legacy single-threaded behavior. The final report (and summary)
+    /// stays in the same order regardless of this value.
+    /// </summary>
+    [JsonPropertyName("maxDegreeOfParallelism")]
+    public int MaxDegreeOfParallelism { get; init; }
+
+    /// <summary>
     /// Optional file-name globs to exclude from scanning, e.g. [ "VR ROOM*" ].
     /// Supports '*' and '?' wildcards, matched case-insensitively against the
     /// table's file name (without directory).
