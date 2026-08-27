@@ -41,6 +41,20 @@ public sealed class VpxPlatform : IPinballPlatform
                 stream.ReadExactly(bytes);
                 elements.Add(VpxGameItem.Parse(entry.Name, bytes));
             }
+
+            foreach (var entry in gameStg.EnumerateEntries())
+            {
+                if (entry.Type != EntryType.Stream ||
+                    !entry.Name.StartsWith("Image", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                using CfbStream stream = gameStg.OpenStream(entry.Name);
+                byte[] bytes = new byte[stream.Length];
+                stream.ReadExactly(bytes);
+                elements.Add(VpxImage.Parse(entry.Name, bytes));
+            }
         }
 
         string script = VpxCompoundFile.GetScript(filePath);

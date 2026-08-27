@@ -61,6 +61,12 @@ public static class VpxRegistryFactory
         // 6. Built-in table rule: ball shadow primitives must not hide parts behind.
         registry.AddTableRule(new BallShadowDepthMaskRule());
 
+        // 7. Built-in table rule: detect the original ninuzzu ball shadow routine.
+        registry.AddTableRule(new BallShadowRoutineRule());
+
+        // 8. Built-in table rule: PostItNote image alpha mask should be high enough.
+        registry.AddTableRule(new PostItNoteAlphaMaskRule());
+
         return registry;
     }
 }

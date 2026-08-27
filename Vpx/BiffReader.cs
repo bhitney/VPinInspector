@@ -51,17 +51,27 @@ public static class BiffReader
     /// </summary>
     public static IReadOnlyList<BiffRecord> Read(byte[] bytes, out int itemType)
     {
-        var records = new List<BiffRecord>();
         itemType = 0;
 
         if (bytes.Length < 4)
         {
-            return records;
+            return new List<BiffRecord>();
         }
 
         // Leading Int32 is the element (item) type.
         itemType = BitConverter.ToInt32(bytes, 0);
-        int pos = 4;
+        return ReadFrom(bytes, 4);
+    }
+
+    /// <summary>
+    /// Reads all BIFF records starting at <paramref name="start"/>. Unlike
+    /// <see cref="Read(byte[], out int)"/> this does not assume a leading Int32
+    /// item type, so it suits streams (e.g. Image) that begin with records.
+    /// </summary>
+    public static IReadOnlyList<BiffRecord> ReadFrom(byte[] bytes, int start = 0)
+    {
+        var records = new List<BiffRecord>();
+        int pos = start;
 
         while (pos + 4 <= bytes.Length)
         {
