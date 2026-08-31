@@ -174,7 +174,7 @@ public sealed class MainForm : Form
             WordWrap = false,
             DetectUrls = false,
             Font = new Font("Consolas", 9.5f),
-            BackColor = Color.White,
+            BackColor = DarkTheme.Surface,
         };
         _outputBox.LinkClicked += OnOutputLinkClicked;
 
@@ -186,7 +186,7 @@ public sealed class MainForm : Form
             WordWrap = false,
             DetectUrls = false,
             Font = new Font("Consolas", 9.5f),
-            BackColor = Color.White,
+            BackColor = DarkTheme.Surface,
         };
         _summaryBox.LinkClicked += OnOutputLinkClicked;
 
@@ -224,9 +224,9 @@ public sealed class MainForm : Form
             WrapContents = false,
             Padding = new Padding(0, 0, 0, 2),
         };
-        legend.Controls.Add(MakeLegendItem("Error", Color.Firebrick));
-        legend.Controls.Add(MakeLegendItem("Warning", Color.DarkGoldenrod));
-        legend.Controls.Add(MakeLegendItem("Info", SystemColors.ControlText));
+        legend.Controls.Add(MakeLegendItem("Error", DarkTheme.Error));
+        legend.Controls.Add(MakeLegendItem("Warning", DarkTheme.Warning));
+        legend.Controls.Add(MakeLegendItem("Info", DarkTheme.Foreground));
 
         var summaryPanel = new Panel { Dock = DockStyle.Fill };
         summaryPanel.Controls.Add(_summaryBox);
@@ -433,6 +433,8 @@ public sealed class MainForm : Form
         MainMenuStrip = _menuStrip;
 
         LoadRulesIntoTree();
+
+        DarkTheme.Apply(this);
     }
 
     private static Button MakeButton(string text) => new()
@@ -562,7 +564,7 @@ public sealed class MainForm : Form
 
         if (!EnsureService() || _engine is null)
         {
-            var errorNode = new TreeNode(_serviceError ?? "No rules loaded") { ForeColor = Color.Firebrick };
+            var errorNode = new TreeNode(_serviceError ?? "No rules loaded") { ForeColor = DarkTheme.Error };
             _rulesTree.Nodes.Add(errorNode);
             _rulesTree.EndUpdate();
             return;
@@ -1022,8 +1024,8 @@ public sealed class MainForm : Form
         {
             Color tagColor = line.Severity switch
             {
-                FindingSeverity.Error => Color.Firebrick,
-                FindingSeverity.Warning => Color.DarkGoldenrod,
+                FindingSeverity.Error => DarkTheme.Error,
+                FindingSeverity.Warning => DarkTheme.Warning,
                 _ => defaultColor,
             };
 
