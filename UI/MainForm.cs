@@ -55,6 +55,11 @@ public sealed class MainForm : Form
     private readonly Dictionary<string, string> _tableLinkPaths =
         new(StringComparer.OrdinalIgnoreCase);
 
+    // Maps a "fix" action link's full text ("[fix issues] <TableName>") to the
+    // table report whose fixable findings should be applied when clicked.
+    private readonly Dictionary<string, TableReport> _tableFixReports =
+        new(StringComparer.Ordinal);
+
     public MainForm()
     {
         Text = "VPin Inspector";
@@ -866,8 +871,10 @@ public sealed class MainForm : Form
             var results = report.Tables.ToList();
 
             RegisterTableLinks(results);
+            RegisterFixLinks(results);
             WriteSummary(report);
             LinkifyTableNames();
+            LinkifyFixMarkers();
 
             if (results.Count < files.Count)
             {
@@ -1108,6 +1115,24 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
+    /// Rebuilds the map of "fix" action link text to the table report whose
+    /// fixable findings will be applied on click. Only flagged tables that have
+    /// at least one auto-fixable finding are registered.
+    /// </summary>
+    private void RegisterFixLinks(IReadOnlyList<TableReport> results)
+    {
+        _tableFixReports.Clear();
+
+        foreach (TableReport result in results)
+        {
+            if (VpxCorrectionWriter.HasFixableFinding(result))
+            {
+                _tableFixReports[ReportRenderer.FixLinkPrefix + result.TableName] = result;
+            }
+        }
+    }
+
+    /// <summary>
     /// Marks each registered table name in the checklist as a clickable link.
     /// Only occurrences that begin a checklist entry ("[ ] &lt;name&gt;") are linked.
     /// </summary>
@@ -1144,9 +1169,51 @@ public sealed class MainForm : Form
         _summaryBox.Select(originalStart, originalLength);
     }
 
+    /// <summary>
+    /// Marks each "fix issues" action marker in the checklist as a clickable
+    /// link. The whole "[fix issues] &lt;name&gt;" span becomes the link text so it
+    /// can be looked up in <see cref="_tableFixReports"/> on click.
+    /// </summary>
+    private void LinkifyFixMarkers()
+    {
+        if (_tableFixReports.Count == 0)
+        {
+            return;
+        }
+
+        int originalStart = _summaryBox.SelectionStart;
+        int originalLength = _summaryBox.SelectionLength;
+        string text = _summaryBox.Text;
+
+        foreach (string marker in _tableFixReports.Keys)
+        {
+            int searchFrom = 0;
+            while (true)
+            {
+                int idx = text.IndexOf(marker, searchFrom, StringComparison.Ordinal);
+                if (idx < 0)
+                {
+                    break;
+                }
+
+                _summaryBox.Select(idx, marker.Length);
+                SetSelectionLink(true);
+                searchFrom = idx + marker.Length;
+            }
+        }
+
+        _summaryBox.Select(originalStart, originalLength);
+    }
+
     /// <summary>Launches the configured VPX executable to edit the clicked table.</summary>
     private void OnOutputLinkClicked(object? sender, LinkClickedEventArgs e)
     {
+        if (e.LinkText is not null && _tableFixReports.TryGetValue(e.LinkText, out TableReport? fixReport))
+        {
+            ApplyFixesFromLink(e.LinkText, fixReport);
+            return;
+        }
+
         if (e.LinkText is null || !_tableLinkPaths.TryGetValue(e.LinkText, out string? tablePath))
         {
             return;
@@ -1175,6 +1242,51 @@ public sealed class MainForm : Form
             MessageBox.Show(this, $"Failed to open the table in VPX:{Environment.NewLine}{ex.Message}",
                 "VPin Inspector", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    /// <summary>
+    /// Applies the auto-fixes for the clicked "[fix issues]" link, then appends a
+    /// non-link "DONE" marker after that link in the summary. No confirmation
+    /// dialog: the user opens the table afterwards to verify.
+    /// </summary>
+    private void ApplyFixesFromLink(string linkText, TableReport report)
+    {
+        string suffix;
+        try
+        {
+            int changed = VpxCorrectionWriter.ApplyFixes(report);
+            suffix = changed > 0 ? " DONE" : " (nothing to fix)";
+        }
+        catch (Exception ex)
+        {
+            suffix = $" FAILED: {ex.Message}";
+        }
+
+        // Prevent re-clicking the same link and stop it re-firing while we edit.
+        _tableFixReports.Remove(linkText);
+
+        int originalStart = _summaryBox.SelectionStart;
+        int originalLength = _summaryBox.SelectionLength;
+
+        // Preserve the scroll position: mutating the selection/text otherwise
+        // yanks the view to the caret.
+        var scroll = new System.Drawing.Point();
+        SendMessage(_summaryBox.Handle, EM_GETSCROLLPOS, IntPtr.Zero, ref scroll);
+
+        int idx = _summaryBox.Text.IndexOf(linkText, StringComparison.Ordinal);
+        if (idx >= 0)
+        {
+            int insertAt = idx + linkText.Length;
+            _summaryBox.Select(insertAt, 0);
+            SetSelectionLink(false);
+            _summaryBox.SelectedText = suffix;
+        }
+
+        _summaryBox.Select(originalStart, originalLength);
+        // Defer the scroll restore so it runs after WinForms' own post-click
+        // scroll-to-caret; otherwise the first click still jumps to the bottom.
+        var restore = scroll;
+        BeginInvoke(() => SendMessage(_summaryBox.Handle, EM_SETSCROLLPOS, IntPtr.Zero, ref restore));
     }
 
     // --- RichTextBox link support (mark current selection as a hyperlink) ---
@@ -1213,6 +1325,12 @@ public sealed class MainForm : Form
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, ref CHARFORMAT2 lParam);
+
+    private const int EM_GETSCROLLPOS = WM_USER + 221;
+    private const int EM_SETSCROLLPOS = WM_USER + 222;
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, ref System.Drawing.Point lParam);
 
     private void SetSelectionLink(bool link)
     {

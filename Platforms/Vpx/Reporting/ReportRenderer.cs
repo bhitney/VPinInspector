@@ -11,6 +11,12 @@ namespace VPin.Inspector.Platforms.Vpx.Reporting;
 /// </summary>
 public static class ReportRenderer
 {
+    /// <summary>
+    /// Text that precedes a table name on the auto-fix action line. The UI links
+    /// the "<c>prefix + TableName</c>" span; keep it in sync with MainForm.
+    /// </summary>
+    public const string FixLinkPrefix = "[fix issues] ";
+
     /// <summary>Formats the detailed per-table block (header + grouped findings).</summary>
     public static string FormatTableDetail(TableReport table)
     {
@@ -102,6 +108,14 @@ public static class ReportRenderer
                 IEnumerable<string> names = group.Select(f =>
                     f.Element is not null ? DescribeElementShort(f.Element) : f.Message);
                 Line(groupSeverity, $"      [ ] {group.Key}: {string.Join(", ", names)}");
+            }
+
+            // A "fix" action line closes out the table's issue list when the
+            // table has at least one auto-fixable finding. The UI turns the
+            // "<prefix><TableName>" span into a clickable link.
+            if (VpxCorrectionWriter.HasFixableFinding(table))
+            {
+                Line(table.Severity, $"      {FixLinkPrefix}{table.TableName}");
             }
         }
 
