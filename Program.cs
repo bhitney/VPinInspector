@@ -70,6 +70,7 @@ static int RunConsole(string[] args)
         ExcludePatterns = engine.Settings.ExcludePatterns,
         MaxRunTimeSeconds = engine.Settings.MaxRunTimeSeconds,
         MaxDegreeOfParallelism = engine.Settings.MaxDegreeOfParallelism,
+        HiddenFileNames = new HiddenTablesStore().Load(),
     };
 
     IReadOnlyList<string> vpxFiles = service.ResolveFiles(inputPath, options);

@@ -27,6 +27,13 @@ public static class ReportRenderer
     /// </summary>
     public const string FixLinkPrefix = "[fix issues] ";
 
+    /// <summary>
+    /// Text that precedes a table name on the "hide" action line. The UI links
+    /// the "<c>prefix + TableName</c>" span so a click adds the table to
+    /// <c>hidden_tables.json</c>; keep it in sync with MainForm.
+    /// </summary>
+    public const string HideLinkPrefix = "[hide table] ";
+
     /// <summary>Formats the detailed per-table block (header + grouped findings).</summary>
     public static string FormatTableDetail(TableReport table)
     {
@@ -137,6 +144,10 @@ public static class ReportRenderer
             {
                 Line(table.Severity, $"      {FixLinkPrefix}{table.TableName}");
             }
+
+            // A "hide" action line lets the user suppress this table from future
+            // scans. The UI turns the "<prefix><TableName>" span into a link.
+            Line(table.Severity, $"      {HideLinkPrefix}{table.TableName}");
         }
 
         Info(string.Empty);
@@ -145,6 +156,11 @@ public static class ReportRenderer
             $"Totals: {results.Count} table(s), {flaggedTables} flagged, {cleanTables} clean, " +
             $"{failedTables} unreadable, {totalFindings} per-table finding(s), " +
             $"{collectionFindings} collection finding(s).");
+
+        if (report.SkippedTableCount > 0)
+        {
+            Info($"Skipped {report.SkippedTableCount} hidden table(s) (see {HiddenTablesStore.FileName}).");
+        }
 
         AppendUnreadableLines(lines, results);
         AppendCollectionFindingLines(lines, report.CollectionFindings);

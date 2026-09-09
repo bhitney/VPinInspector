@@ -30,6 +30,9 @@ internal static class DarkTheme
     /// <summary>Link / accent color.</summary>
     public static readonly Color Accent = Color.FromArgb(86, 156, 214);
 
+    /// <summary>Dimmed text for de-emphasized / hidden content.</summary>
+    public static readonly Color Muted = Color.FromArgb(130, 130, 130);
+
     // Severity accents tuned to remain legible on a dark background.
     public static readonly Color Error = Color.FromArgb(240, 105, 105);
     public static readonly Color Warning = Color.FromArgb(226, 184, 92);

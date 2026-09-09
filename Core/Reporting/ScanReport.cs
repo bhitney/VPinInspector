@@ -64,6 +64,12 @@ public sealed class ScanReport
     public IReadOnlyList<TableReport> Tables { get; init; } = Array.Empty<TableReport>();
 
     /// <summary>
+    /// Number of tables skipped during discovery because they are listed in the
+    /// user's hidden-tables file. Reported as a data point after each scan.
+    /// </summary>
+    public int SkippedTableCount { get; init; }
+
+    /// <summary>
     /// Findings from collection rules, grouped by the rule that produced them,
     /// in registration order.
     /// </summary>

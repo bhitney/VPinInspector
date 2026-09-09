@@ -63,6 +63,15 @@ public sealed class MainForm : Form
     private readonly Dictionary<string, TableReport> _tableFixReports =
         new(StringComparer.Ordinal);
 
+    // Maps a "hide" action link's full text ("[hide table] <TableName>") to the
+    // table report to add to hidden_tables.json when clicked.
+    private readonly Dictionary<string, TableReport> _tableHideReports =
+        new(StringComparer.Ordinal);
+
+    // Manages hidden_tables.json (next to the executable) so hidden tables are
+    // skipped on future scans.
+    private readonly HiddenTablesStore _hiddenTables = new();
+
     public MainForm()
     {
         Text = "VPin Inspector";
@@ -823,7 +832,11 @@ public sealed class MainForm : Form
 
             files = service.ResolveFiles(
                 scanInput,
-                new ScanOptions { ExcludePatterns = settings.ExcludePatterns }).ToList();
+                new ScanOptions
+                {
+                    ExcludePatterns = settings.ExcludePatterns,
+                    HiddenFileNames = _hiddenTables.Load(),
+                }).ToList();
             if (files.Count == 0)
             {
                 MessageBox.Show(this, $"No tables found at '{scanInput}'.", "VPin Inspector",
@@ -857,6 +870,8 @@ public sealed class MainForm : Form
             ExplicitFiles = mode == ScanMode.FlaggedOnly ? files : null,
             // Collection rules only make sense on a full folder scan.
             RunCollectionRules = mode == ScanMode.Full,
+            // Skip tables the user has hidden via hidden_tables.json.
+            HiddenFileNames = _hiddenTables.Load(),
         };
 
         _cts = new CancellationTokenSource();
@@ -1053,9 +1068,11 @@ public sealed class MainForm : Form
         _summaryBox.Clear();
         RegisterTableLinks(results);
         RegisterFixLinks(results);
+        RegisterHideLinks(results);
         WriteSummary(report);
         LinkifyTableNames();
         LinkifyFixMarkers();
+        LinkifyHideMarkers();
     }
 
     /// <summary>The summary sort order currently selected in the settings panel.</summary>
@@ -1188,6 +1205,24 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
+    /// Rebuilds the map of "hide" action link text to the table report to add to
+    /// <c>hidden_tables.json</c> on click. Every flagged table is registered so
+    /// the user can suppress any recurring false positive.
+    /// </summary>
+    private void RegisterHideLinks(IReadOnlyList<TableReport> results)
+    {
+        _tableHideReports.Clear();
+
+        foreach (TableReport result in results)
+        {
+            if (result.IsFlagged)
+            {
+                _tableHideReports[ReportRenderer.HideLinkPrefix + result.TableName] = result;
+            }
+        }
+    }
+
+    /// <summary>
     /// Marks each registered table name in the checklist as a clickable link.
     /// Only occurrences that begin a checklist entry ("[ ] &lt;name&gt;") are linked.
     /// </summary>
@@ -1260,12 +1295,54 @@ public sealed class MainForm : Form
         _summaryBox.Select(originalStart, originalLength);
     }
 
+    /// <summary>
+    /// Marks each "hide table" action marker in the checklist as a clickable
+    /// link. The whole "[hide table] &lt;name&gt;" span becomes the link text so it
+    /// can be looked up in <see cref="_tableHideReports"/> on click.
+    /// </summary>
+    private void LinkifyHideMarkers()
+    {
+        if (_tableHideReports.Count == 0)
+        {
+            return;
+        }
+
+        int originalStart = _summaryBox.SelectionStart;
+        int originalLength = _summaryBox.SelectionLength;
+        string text = _summaryBox.Text;
+
+        foreach (string marker in _tableHideReports.Keys)
+        {
+            int searchFrom = 0;
+            while (true)
+            {
+                int idx = text.IndexOf(marker, searchFrom, StringComparison.Ordinal);
+                if (idx < 0)
+                {
+                    break;
+                }
+
+                _summaryBox.Select(idx, marker.Length);
+                SetSelectionLink(true);
+                searchFrom = idx + marker.Length;
+            }
+        }
+
+        _summaryBox.Select(originalStart, originalLength);
+    }
+
     /// <summary>Launches the configured VPX executable to edit the clicked table.</summary>
     private void OnOutputLinkClicked(object? sender, LinkClickedEventArgs e)
     {
         if (e.LinkText is not null && _tableFixReports.TryGetValue(e.LinkText, out TableReport? fixReport))
         {
             ApplyFixesFromLink(e.LinkText, fixReport);
+            return;
+        }
+
+        if (e.LinkText is not null && _tableHideReports.TryGetValue(e.LinkText, out TableReport? hideReport))
+        {
+            HideTableFromLink(e.LinkText, hideReport);
             return;
         }
 
@@ -1342,6 +1419,88 @@ public sealed class MainForm : Form
         // scroll-to-caret; otherwise the first click still jumps to the bottom.
         var restore = scroll;
         BeginInvoke(() => SendMessage(_summaryBox.Handle, EM_SETSCROLLPOS, IntPtr.Zero, ref restore));
+    }
+
+    /// <summary>
+    /// Adds the clicked table to <c>hidden_tables.json</c> so it is skipped on
+    /// future scans, then removes it from the retained results and re-renders the
+    /// summary so it no longer surfaces.
+    /// </summary>
+    private void HideTableFromLink(string linkText, TableReport report)
+    {
+        try
+        {
+            _hiddenTables.Add(report.TableName);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this,
+                $"Failed to update {HiddenTablesStore.FileName}:{Environment.NewLine}{ex.Message}",
+                "VPin Inspector", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        // Drop the table from the retained results/report so a later rescan or
+        // sort-driven re-render no longer surfaces it. We do NOT re-render now:
+        // rebuilding the whole pane is slow and resets the scroll. Instead we
+        // annotate the existing text in place (see below).
+        _lastResults.RemoveAll(r =>
+            string.Equals(r.FilePath, report.FilePath, StringComparison.OrdinalIgnoreCase));
+
+        if (_lastReport is not null)
+        {
+            var remaining = _lastReport.Tables
+                .Where(r => !string.Equals(r.FilePath, report.FilePath, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            _lastReport = new ScanReport
+            {
+                InputPath = _lastReport.InputPath,
+                Tables = remaining,
+                CollectionFindings = _lastReport.CollectionFindings,
+                SkippedTableCount = _lastReport.SkippedTableCount,
+            };
+        }
+
+        // Prevent re-clicking the same link and stop it re-firing while we edit.
+        _tableHideReports.Remove(linkText);
+
+        int originalStart = _summaryBox.SelectionStart;
+        int originalLength = _summaryBox.SelectionLength;
+
+        // Preserve the scroll position: mutating the selection/text otherwise
+        // yanks the view to the caret.
+        var scroll = new System.Drawing.Point();
+        SendMessage(_summaryBox.Handle, EM_GETSCROLLPOS, IntPtr.Zero, ref scroll);
+
+        int idx = _summaryBox.Text.IndexOf(linkText, StringComparison.Ordinal);
+        if (idx >= 0)
+        {
+            int insertAt = idx + linkText.Length;
+            _summaryBox.Select(insertAt, 0);
+            SetSelectionLink(false);
+            _summaryBox.SelectedText = " HIDDEN";
+
+            // Dim the whole table block (header line through the hide marker) so
+            // it visually recedes without an expensive full re-render.
+            string header = "[ ] " + report.TableName;
+            int blockStart = _summaryBox.Text.LastIndexOf(header, idx, StringComparison.Ordinal);
+            if (blockStart >= 0)
+            {
+                int blockEnd = insertAt + " HIDDEN".Length;
+                _summaryBox.Select(blockStart, blockEnd - blockStart);
+                _summaryBox.SelectionColor = DarkTheme.Muted;
+            }
+        }
+
+        _summaryBox.Select(originalStart, originalLength);
+        // Defer the scroll restore so it runs after WinForms' own post-click
+        // scroll-to-caret; otherwise the click still jumps the view.
+        var restore = scroll;
+        BeginInvoke(() => SendMessage(_summaryBox.Handle, EM_SETSCROLLPOS, IntPtr.Zero, ref restore));
+
+        _rescanFlaggedButton.Enabled = _lastResults.Any(r => r.IsFlagged);
+        _statusLabel.Text = $"Hid '{report.TableName}' from future scans.";
     }
 
     // --- RichTextBox link support (mark current selection as a hyperlink) ---

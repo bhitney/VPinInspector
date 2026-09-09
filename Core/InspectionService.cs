@@ -38,6 +38,13 @@ public sealed class ScanOptions
     /// When false, collection rules are skipped (they need the full collection).
     /// </summary>
     public bool RunCollectionRules { get; init; } = true;
+
+    /// <summary>
+    /// File names (e.g. "Table.vpx", case-insensitive) the user has chosen to
+    /// hide from scans. Matching files are excluded from discovery and counted
+    /// as skipped. Null or empty = hide nothing.
+    /// </summary>
+    public IReadOnlySet<string>? HiddenFileNames { get; init; }
 }
 
 /// <summary>
@@ -62,6 +69,11 @@ public sealed class InspectionService
             return options.ExplicitFiles;
         }
 
+        if (options.ExplicitFiles is not null)
+        {
+            return ApplyHiddenFilter(options.ExplicitFiles, options.HiddenFileNames);
+        }
+
         Regex? exclude = BuildExcludeRegex(options.ExcludePatterns);
 
         if (Directory.Exists(inputPath))
@@ -69,20 +81,35 @@ public sealed class InspectionService
             var extensions = _registry.AllFileExtensions
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-            return Directory
+            var files = Directory
                 .EnumerateFiles(inputPath, "*.*", SearchOption.AllDirectories)
                 .Where(f => extensions.Contains(Path.GetExtension(f)))
                 .Where(f => exclude is null || !exclude.IsMatch(Path.GetFileName(f)))
                 .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+
+            return ApplyHiddenFilter(files, options.HiddenFileNames);
         }
 
         if (File.Exists(inputPath))
         {
-            return new[] { inputPath };
+            return ApplyHiddenFilter(new[] { inputPath }, options.HiddenFileNames);
         }
 
         return Array.Empty<string>();
+    }
+
+    private static List<string> ApplyHiddenFilter(
+        IReadOnlyList<string> files, IReadOnlySet<string>? hiddenFileNames)
+    {
+        if (hiddenFileNames is null || hiddenFileNames.Count == 0)
+        {
+            return files.ToList();
+        }
+
+        return files
+            .Where(f => !hiddenFileNames.Contains(Path.GetFileName(f)))
+            .ToList();
     }
 
     /// <summary>
@@ -99,6 +126,26 @@ public sealed class InspectionService
         options ??= new ScanOptions();
 
         var files = ResolveFiles(inputPath, options);
+
+        // Count how many tables were hidden (present without the filter, absent
+        // with it) so the report can surface it as a data point.
+        int skippedTableCount = 0;
+        if (options.HiddenFileNames is { Count: > 0 })
+        {
+            var unfiltered = ResolveFiles(
+                inputPath,
+                new ScanOptions
+                {
+                    SelectedRuleIds = options.SelectedRuleIds,
+                    ExcludePatterns = options.ExcludePatterns,
+                    MaxRunTimeSeconds = options.MaxRunTimeSeconds,
+                    MaxDegreeOfParallelism = options.MaxDegreeOfParallelism,
+                    ExplicitFiles = options.ExplicitFiles,
+                    RunCollectionRules = options.RunCollectionRules,
+                    HiddenFileNames = null,
+                });
+            skippedTableCount = unfiltered.Count - files.Count;
+        }
 
         // Only pay for the expensive body parse when a selected rule needs it.
         bool needsDeep = RequiresDeepAnalysis(options);
@@ -205,6 +252,7 @@ public sealed class InspectionService
             InputPath = inputPath,
             Tables = tableReports,
             CollectionFindings = collectionGroups,
+            SkippedTableCount = skippedTableCount,
         };
     }
 
