@@ -34,6 +34,7 @@ public sealed class MainForm : Form
     private readonly NumericUpDown _maxRunTime;
     private readonly TextBox _vpxExeBox;
     private readonly TextBox _dofConfigBox;
+    private readonly ComboBox _sortModeBox;
     private readonly ToolTip _toolTip = new();
     private readonly SplitContainer _split;
     private readonly SplitContainer _outputSplit;
@@ -49,8 +50,10 @@ public sealed class MainForm : Form
 
     // The most recent scan results, used to drive "rescan flagged".
     private List<TableReport> _lastResults = new();
+    // The most recent full report, retained so the summary can be re-rendered
+    // (e.g. when the sort order changes) without rescanning.
+    private ScanReport? _lastReport;
     private CancellationTokenSource? _cts;
-
     // Maps checklist table-name link text to the full .vpx file path to open.
     private readonly Dictionary<string, string> _tableLinkPaths =
         new(StringComparer.OrdinalIgnoreCase);
@@ -298,7 +301,7 @@ public sealed class MainForm : Form
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 2,
-            RowCount = 5,
+            RowCount = 6,
             Margin = new Padding(0),
             Padding = new Padding(0, 0, 0, 6),
         };
@@ -376,6 +379,26 @@ public sealed class MainForm : Form
         _toolTip.SetToolTip(_dofConfigBox,
             "Path to the DirectOutput config .ini used by the dof-check rule. Empty = default directoutputconfig51.ini if present.");
 
+        var sortLabel = new Label
+        {
+            Text = "Sort by:",
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(3, 6, 6, 3),
+        };
+        _sortModeBox = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Width = 160,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(3, 3, 3, 3),
+        };
+        _sortModeBox.Items.AddRange(new object[] { "Table name (A-Z)", "Most findings first" });
+        _sortModeBox.SelectedIndex = 0;
+        _sortModeBox.SelectedIndexChanged += OnSortModeChanged;
+        _toolTip.SetToolTip(_sortModeBox,
+            "Orders the summary checklist alphabetically or by number of findings (most first).");
+
         settingsPanel.Controls.Add(settingsHeader, 0, 0);
         settingsPanel.SetColumnSpan(settingsHeader, 2);
         settingsPanel.Controls.Add(excludeLabel, 0, 1);
@@ -386,6 +409,8 @@ public sealed class MainForm : Form
         settingsPanel.Controls.Add(_vpxExeBox, 1, 3);
         settingsPanel.Controls.Add(dofConfigLabel, 0, 4);
         settingsPanel.Controls.Add(_dofConfigBox, 1, 4);
+        settingsPanel.Controls.Add(sortLabel, 0, 5);
+        settingsPanel.Controls.Add(_sortModeBox, 1, 5);
 
         rulesPanel.Controls.Add(_rulesTree);
         rulesPanel.Controls.Add(settingsPanel);
@@ -870,11 +895,8 @@ public sealed class MainForm : Form
 
             var results = report.Tables.ToList();
 
-            RegisterTableLinks(results);
-            RegisterFixLinks(results);
-            WriteSummary(report);
-            LinkifyTableNames();
-            LinkifyFixMarkers();
+            _lastReport = report;
+            RenderSummary(report);
 
             if (results.Count < files.Count)
             {
@@ -955,6 +977,7 @@ public sealed class MainForm : Form
         _vpxExeBox.Enabled = !scanning;
         _dofConfigBox.Enabled = !scanning;
         _openRulesLink.Enabled = !scanning;
+        _sortModeBox.Enabled = !scanning;
         _rescanFlaggedButton.Enabled = !scanning && _lastResults.Any(r => r.IsFlagged);
         _cancelButton.Enabled = scanning;
 
@@ -1019,6 +1042,38 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
+    /// Clears and rebuilds the summary pane (checklist + clickable links) from a
+    /// report, honoring the current sort order. Used after a scan and whenever
+    /// the sort option changes (no rescan needed).
+    /// </summary>
+    private void RenderSummary(ScanReport report)
+    {
+        var results = report.Tables.ToList();
+
+        _summaryBox.Clear();
+        RegisterTableLinks(results);
+        RegisterFixLinks(results);
+        WriteSummary(report);
+        LinkifyTableNames();
+        LinkifyFixMarkers();
+    }
+
+    /// <summary>The summary sort order currently selected in the settings panel.</summary>
+    private SummarySort CurrentSort =>
+        _sortModeBox.SelectedIndex == 1
+            ? SummarySort.FindingCountDescending
+            : SummarySort.Alphabetical;
+
+    /// <summary>Re-renders the retained report when the sort order changes.</summary>
+    private void OnSortModeChanged(object? sender, EventArgs e)
+    {
+        if (_lastReport is not null)
+        {
+            RenderSummary(_lastReport);
+        }
+    }
+
+    /// <summary>
     /// Writes the summary into the summary pane. Only a leading severity tag
     /// (e.g. "[ERROR]" / "[WARN]") is colored; the rest of the line stays in the
     /// default color for readability.
@@ -1027,7 +1082,7 @@ public sealed class MainForm : Form
     {
         Color defaultColor = _summaryBox.ForeColor;
 
-        foreach (RenderedLine line in ReportRenderer.BuildSummaryLines(report))
+        foreach (RenderedLine line in ReportRenderer.BuildSummaryLines(report, CurrentSort))
         {
             Color tagColor = line.Severity switch
             {

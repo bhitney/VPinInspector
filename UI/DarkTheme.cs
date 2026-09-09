@@ -85,6 +85,13 @@ internal static class DarkTheme
                 numeric.ForeColor = Foreground;
                 break;
 
+            case ComboBox combo:
+                combo.BackColor = Surface;
+                combo.ForeColor = Foreground;
+                combo.FlatStyle = FlatStyle.Flat;
+                UseDarkScrollBars(combo);
+                break;
+
             case RichTextBox richTextBox:
                 richTextBox.BackColor = Surface;
                 richTextBox.ForeColor = Foreground;

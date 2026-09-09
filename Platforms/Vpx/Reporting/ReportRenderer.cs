@@ -5,6 +5,16 @@ using VPin.Inspector.Core.Rules;
 
 namespace VPin.Inspector.Platforms.Vpx.Reporting;
 
+/// <summary>How the summary checklist orders its flagged tables.</summary>
+public enum SummarySort
+{
+    /// <summary>Alphabetical by table name (the default).</summary>
+    Alphabetical,
+
+    /// <summary>Most findings first (ties broken alphabetically).</summary>
+    FindingCountDescending,
+}
+
 /// <summary>
 /// Renders a <see cref="ScanReport"/> to human-readable text for the console and
 /// UI. Replaces the legacy ReportFormatter; consumes only neutral Core types.
@@ -54,10 +64,10 @@ public static class ReportRenderer
     }
 
     /// <summary>Formats the end-of-run summary checklist, totals, and collection findings.</summary>
-    public static string FormatSummary(ScanReport report)
+    public static string FormatSummary(ScanReport report, SummarySort sort = SummarySort.Alphabetical)
     {
         var sb = new StringBuilder();
-        foreach (RenderedLine line in BuildSummaryLines(report))
+        foreach (RenderedLine line in BuildSummaryLines(report, sort))
         {
             sb.AppendLine(line.Text);
         }
@@ -70,7 +80,8 @@ public static class ReportRenderer
     /// text; the UI colors them. This is the single source of truth for summary
     /// content so both front-ends stay consistent.
     /// </summary>
-    public static IReadOnlyList<RenderedLine> BuildSummaryLines(ScanReport report)
+    public static IReadOnlyList<RenderedLine> BuildSummaryLines(
+        ScanReport report, SummarySort sort = SummarySort.Alphabetical)
     {
         var lines = new List<RenderedLine>();
         void Info(string t) => lines.Add(RenderedLine.Info(t));
@@ -87,7 +98,13 @@ public static class ReportRenderer
         int failedTables = results.Count(r => r.Failed);
         int totalFindings = results.Sum(r => r.Findings.Count);
 
-        foreach (TableReport table in results.OrderBy(r => r.TableName, StringComparer.OrdinalIgnoreCase))
+        IEnumerable<TableReport> ordered = sort == SummarySort.FindingCountDescending
+            ? results
+                .OrderByDescending(RuleViolationCount)
+                .ThenBy(r => r.TableName, StringComparer.OrdinalIgnoreCase)
+            : results.OrderBy(r => r.TableName, StringComparer.OrdinalIgnoreCase);
+
+        foreach (TableReport table in ordered)
         {
             if (table.Failed)
             {
@@ -100,8 +117,11 @@ public static class ReportRenderer
                 continue; // clean tables omitted to reduce noise
             }
 
-            // The table headline takes the table's overall (max) severity.
-            Line(table.Severity, $"[ ] {table.TableName}  ({table.Findings.Count} finding(s))");
+            // The table headline takes the table's overall (max) severity. The
+            // count reflects the number of distinct rules violated, not the raw
+            // number of flagged items (which can be dominated by one rule).
+            int ruleCount = RuleViolationCount(table);
+            Line(table.Severity, $"[ ] {table.TableName}  ({ruleCount} rule(s) flagged)");
             foreach (var group in table.Findings.GroupBy(f => f.RuleId))
             {
                 FindingSeverity groupSeverity = group.Max(f => f.Severity);
@@ -186,6 +206,14 @@ public static class ReportRenderer
             }
         }
     }
+
+    /// <summary>
+    /// Number of distinct rules a table violated (each rule counts once no
+    /// matter how many elements it flagged), used for the headline count and
+    /// the "most findings first" sort.
+    /// </summary>
+    private static int RuleViolationCount(TableReport table) =>
+        table.Findings.Select(f => f.RuleId).Distinct(StringComparer.Ordinal).Count();
 
     private static string DescribeElement(TableElement? element)
     {
