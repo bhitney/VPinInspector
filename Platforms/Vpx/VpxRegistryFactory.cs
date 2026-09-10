@@ -67,6 +67,9 @@ public static class VpxRegistryFactory
         // 8. Built-in table rule: PostItNote image alpha mask should be high enough.
         registry.AddTableRule(new PostItNoteAlphaMaskRule());
 
+        // 9. Built-in table rule: ball shadow image alpha mask must be -1, 0, or 1.
+        registry.AddTableRule(new BallShadowAlphaMaskRule());
+
         return registry;
     }
 }

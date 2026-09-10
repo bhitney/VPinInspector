@@ -1073,6 +1073,7 @@ public sealed class MainForm : Form
         LinkifyTableNames();
         LinkifyFixMarkers();
         LinkifyHideMarkers();
+        LinkifyDofTableNames(report);
     }
 
     /// <summary>The summary sort order currently selected in the settings panel.</summary>
@@ -1325,6 +1326,65 @@ public sealed class MainForm : Form
                 _summaryBox.Select(idx, marker.Length);
                 SetSelectionLink(true);
                 searchFrom = idx + marker.Length;
+            }
+        }
+
+        _summaryBox.Select(originalStart, originalLength);
+    }
+
+    /// <summary>
+    /// Marks the table name inside each dof-lookup collection finding as a
+    /// clickable link that opens the table in VPX, matching the behavior of the
+    /// per-table checklist links. The dof-lookup rule supplies the table name and
+    /// full .vpx path via each finding's <c>Details</c>.
+    /// </summary>
+    private void LinkifyDofTableNames(ScanReport report)
+    {
+        if (string.IsNullOrWhiteSpace(_vpxExeBox.Text))
+        {
+            return;
+        }
+
+        var dofGroup = report.CollectionFindings
+            .FirstOrDefault(g => string.Equals(g.RuleId, "dof-lookup", StringComparison.Ordinal));
+        if (dofGroup is null || dofGroup.Findings.Count == 0)
+        {
+            return;
+        }
+
+        int originalStart = _summaryBox.SelectionStart;
+        int originalLength = _summaryBox.SelectionLength;
+        string text = _summaryBox.Text;
+
+        foreach (Finding finding in dofGroup.Findings)
+        {
+            if (finding.Details is null ||
+                !finding.Details.TryGetValue("TableName", out string? tableName) ||
+                !finding.Details.TryGetValue("FilePath", out string? filePath) ||
+                string.IsNullOrEmpty(tableName) ||
+                string.IsNullOrEmpty(filePath))
+            {
+                continue;
+            }
+
+            // The rule renders the table name wrapped in single quotes; link the
+            // name span itself so the click text equals the registered key.
+            _tableLinkPaths[tableName] = filePath;
+
+            string needle = "'" + tableName + "'";
+            int searchFrom = 0;
+            while (true)
+            {
+                int idx = text.IndexOf(needle, searchFrom, StringComparison.Ordinal);
+                if (idx < 0)
+                {
+                    break;
+                }
+
+                int nameStart = idx + 1; // skip the opening quote
+                _summaryBox.Select(nameStart, tableName.Length);
+                SetSelectionLink(true);
+                searchFrom = nameStart + tableName.Length;
             }
         }
 

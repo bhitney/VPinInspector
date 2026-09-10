@@ -72,7 +72,14 @@ public sealed class DofLookupRule : ICollectionRule
                 yield return new Finding(
                     Id,
                     FindingSeverity.Info,
-                    $"'{table.Table.TableName}': no DOF entry for ROM '{rom}'.");
+                    $"'{table.Table.TableName}': no DOF entry for ROM '{rom}'.")
+                {
+                    Details = new Dictionary<string, string>
+                    {
+                        ["TableName"] = table.Table.TableName,
+                        ["FilePath"] = table.Table.FilePath,
+                    },
+                };
             }
         }
     }

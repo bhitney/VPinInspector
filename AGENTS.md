@@ -55,6 +55,7 @@ Core/                              VPinInspector.Core (net10.0, neutral)
 Platforms/Vpx/                     VPX platform adapter (lives in the app project for now)
   Model/
 	VpxGameItem.cs                 VPX element (: TableElement, ITimerElement) + VpxItemType enum. Parses NAME/TMON/TMIN.
+	VpxImage.cs                    VPX image resource (: TableElement, TypeName "Image") surfaced so image rules can read it. Parses NAME + Alpha Mask (ALTV).
 	VpxTable.cs                    VPX table document (: PinballTable).
   VpxPlatform.cs                   Opens .vpx (OpenMcdf), builds a neutral VpxTable. LoadShallow = metadata only.
   VpxRegistryFactory.cs            Composition root: wires platform + rules.json rules + opt-in modules.
@@ -62,7 +63,10 @@ Platforms/Vpx/                     VPX platform adapter (lives in the app projec
 	DeclarativeElementRule.cs      Wraps ONE rules.json rule as an ITableRule (name/type/interval + severity). Deep.
 	WellFormedNameRule.cs          ITableRule (Quick): flags names not matching "Name (Manufacturer Year)".
 	BallShadowDepthMaskRule.cs     ITableRule (Deep): flags *shadow* primitives with "Hide parts behind" (ZMSK) checked.
-	DofLookupRule.cs               Opt-in ICollectionRule (Deep): table ROM vs DOF config.
+	BallShadowRoutineRule.cs       ITableRule (Deep): flags the original (unmodified) "ninuzzu's ball shadow" script routine.
+	BallShadowAlphaMaskRule.cs     ITableRule (Deep): flags a *ball*+*shadow* image whose Alpha Mask (ALTV) is > 1 (valid: -1/0/1).
+	PostItNoteAlphaMaskRule.cs     ITableRule (Deep): flags a "PostItNote" image whose Alpha Mask (ALTV) is <= 1 (raise to ~50).
+	DofLookupRule.cs               Opt-in ICollectionRule (Deep): table ROM vs DOF config. Findings carry Details{TableName,FilePath} so the UI links each table into VPX.
 	PinupGameMatchRule.cs          Opt-in ICollectionRule (Quick): folder vs PinUP DB games.
 	PinupMetadataCheckRule.cs      Opt-in ICollectionRule (Deep): ROM/manufacturer/year/version vs PinUP DB.
 	PinupMediaMatchRule.cs         Opt-in ICollectionRule (Quick): PinUP media presence per media folder.
