@@ -98,6 +98,14 @@ public sealed class ConfigurationChecksSettings
     /// <summary>Settings for the version check (local Popper GAMEVER vs VPS puplookup.csv).</summary>
     [JsonPropertyName("version-check")]
     public VersionCheckSettings VersionCheck { get; init; } = new();
+
+    /// <summary>
+    /// Settings for the configurable shadow depth-mask check: a user-editable
+    /// list of regexes for locating shadow primitives whose "Hide parts behind"
+    /// flag should be unchecked. Disabled by default (likely noisy).
+    /// </summary>
+    [JsonPropertyName("configurable-shadow")]
+    public ConfigurableShadowSettings ConfigurableShadow { get; init; } = new();
 }
 
 /// <summary>
@@ -346,6 +354,25 @@ public sealed class VersionCheckSettings : ConfigurationCheckSettings
     /// </summary>
     [JsonPropertyName("lookupCsvPath")]
     public string LookupCsvPath { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// Settings for the configurable shadow depth-mask check. Scans primitive
+/// elements whose name matches any of the user-supplied <see cref="Patterns"/>
+/// (.NET regular expressions, evaluated case-insensitively) and flags those
+/// whose "Hide parts behind" (BIFF ZMSK) flag is checked. Disabled by default
+/// because a broad pattern such as ".*shadow.*" can be noisy.
+/// </summary>
+public sealed class ConfigurableShadowSettings : ConfigurationCheckSettings
+{
+    /// <summary>
+    /// User-editable list of regexes matched against a primitive's name. Any
+    /// match makes the primitive eligible. Examples: "shadow" (broad),
+    /// "Divertershadow_(Left|Right)" (targeted). Defaults to a single broad
+    /// "shadow" pattern.
+    /// </summary>
+    [JsonPropertyName("patterns")]
+    public List<string> Patterns { get; init; } = new() { "shadow" };
 }
 
 /// <summary>

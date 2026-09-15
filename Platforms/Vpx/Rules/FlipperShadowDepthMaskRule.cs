@@ -13,8 +13,9 @@ namespace VPin.Inspector.Platforms.Vpx.Rules;
 ///
 /// Common naming conventions include "FlipperSh", "LFlipperSh"/"RFlipperSh",
 /// "FlipperLSh"/"FlipperRSh", and "FlipperShadowL"/"FlipperShadowR" (L/R for the
-/// left/right flipper). The shared trait is a name containing "flipper" together
-/// with a shadow token ("shadow" or the "sh" abbreviation).
+/// left/right flipper). Some tables use the word "bat" instead of "flipper"
+/// (e.g. "BatShadowL"). The shared trait is a name containing "flipper" or
+/// "bat" together with a shadow token ("shadow" or the "sh" abbreviation).
 ///
 /// This is a VPX-specific structural check (it reads a primitive property that
 /// the declarative rules.json schema can't express), so it lives as a code rule
@@ -62,11 +63,12 @@ public sealed class FlipperShadowDepthMaskRule : ITableRule
 
     /// <summary>
     /// True when the primitive name looks like a flipper shadow: it must contain
-    /// "flipper" and a shadow token ("shadow", or the "sh" abbreviation).
+    /// "flipper" or "bat" and a shadow token ("shadow", or the "sh" abbreviation).
     /// </summary>
     private static bool IsFlipperShadowName(string name)
     {
-        if (name.IndexOf("flipper", StringComparison.OrdinalIgnoreCase) < 0)
+        if (name.IndexOf("flipper", StringComparison.OrdinalIgnoreCase) < 0 &&
+            name.IndexOf("bat", StringComparison.OrdinalIgnoreCase) < 0)
         {
             return false;
         }

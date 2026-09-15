@@ -53,6 +53,10 @@
         "matchEmulatorsByFolder": true,
         "visibleOnly": false,
         "lookupCsvPath": ""
+      },
+      "configurable-shadow": {
+        "enabled": false,
+        "patterns": [ "shadow", "Divertershadow_(Left|Right)" ]
       }
     }
   },

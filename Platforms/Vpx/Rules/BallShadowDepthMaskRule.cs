@@ -35,7 +35,7 @@ public sealed class BallShadowDepthMaskRule : ITableRule
         foreach (TableElement element in context.Elements)
         {
             if (element.TypeName != nameof(VpxItemType.Primitive) ||
-                element.Name.IndexOf("shadow", StringComparison.OrdinalIgnoreCase) < 0)
+                !IsBallShadowName(element.Name))
             {
                 continue;
             }
@@ -54,4 +54,10 @@ public sealed class BallShadowDepthMaskRule : ITableRule
             }
         }
     }
+
+    // Requires BOTH "ball" and "shadow" in the name so it matches BallShadow1,
+    // RtxBallShadow1, etc., but not unrelated primitives like "VR_Clock Shadow".
+    private static bool IsBallShadowName(string name) =>
+        name.IndexOf("ball", StringComparison.OrdinalIgnoreCase) >= 0 &&
+        name.IndexOf("shadow", StringComparison.OrdinalIgnoreCase) >= 0;
 }
