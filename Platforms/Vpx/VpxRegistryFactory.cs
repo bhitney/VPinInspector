@@ -61,6 +61,10 @@ public static class VpxRegistryFactory
         // 6. Built-in table rule: ball shadow primitives must not hide parts behind.
         registry.AddTableRule(new BallShadowDepthMaskRule());
 
+        // 6b. Built-in table rule: legacy ball shadow primitives missing the
+        // depth-mask flag entirely (VPX defaults it to checked). Not auto-fixable.
+        registry.AddTableRule(new LegacyBallShadowDepthMaskRule());
+
         // 7. Built-in table rule: detect the original ninuzzu ball shadow routine.
         registry.AddTableRule(new BallShadowRoutineRule());
 
@@ -81,6 +85,9 @@ public static class VpxRegistryFactory
 
         // 13. Built-in table rule: high score tape primitives must not hide parts behind.
         registry.AddTableRule(new HighScoreTapeRule());
+
+        // 14. Opt-in table rule: user-configurable shadow depth-mask (custom regex).
+        registry.AddTableRule(new ConfigurableShadowRule(settings.ConfigurationChecks.ConfigurableShadow));
 
         return registry;
     }
