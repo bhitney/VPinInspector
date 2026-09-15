@@ -10,20 +10,60 @@ namespace VPin.Inspector.Platforms.Vpx.Rules;
 /// A common improved/modified variant reads:
 /// <code>'	ninuzzu's	BALL SHADOW - MODIFIED (bthLonewolf)</code>
 ///
-/// The rule flags the original (unmodified) routine so it can be upgraded. A
-/// line that also contains "MODIFIED" is treated as the improved variant and is
-/// not flagged. This is a VPX-specific script scan (it parses the raw script
-/// text, which the declarative rules.json schema can't express), so it lives as
-/// a code rule rather than a JSON rule.
+/// The routine is often tweaked per-table, so relying on the header alone
+/// misses tables. In addition to the header, this rule keys off two more
+/// stable signals: the <c>Sub BallShadowUpdate_timer()</c> declaration, and the
+/// characteristic shadow-position line, e.g.
+/// <code>BallShadow(b).X = ((BOT(b).X) - (Ballsize/6) + ((BOT(b).X - (Table1.Width/2))/7)) + 6</code>
+/// whose trailing offset (<c>+ 6</c>, <c>+ 10</c>, <c>+ 2</c>, or commented out)
+/// varies between tables.
+///
+/// The rule flags the original (unmodified) routine so it can be upgraded. If
+/// the modification marker <c>BALL SHADOW - MODIFIED (bthLonewolf)</c> appears
+/// anywhere in the script, the table has already been upgraded and is not
+/// flagged. Tables that use the more advanced VPW "dynamic ball shadows"
+/// system (identified by the <c>DynamicBallShadowsOn</c> constant, even when
+/// commented out or disabled) are also skipped, since they don't use the
+/// simple ninuzzu routine. This is a
+/// VPX-specific script scan (it parses the raw script text, which the
+/// declarative rules.json schema can't express), so it lives as a code rule
+/// rather than a JSON rule.
 /// </summary>
 public sealed partial class BallShadowRoutineRule : ITableRule
 {
-    // Matches a line mentioning both "ninuzzu" and "shadow" (in that order,
-    // tolerant of the tabs/spacing in the header comment), case-insensitive.
+    // Matches a section-header comment line whose comment text begins with an
+    // optional "ninuzzu's" attribution followed by "ball shadow". The line must
+    // be a comment (leading ' with optional whitespace/decoration), which
+    // avoids matching descriptive prose that merely mentions "ninuzzu" or
+    // "ball shadow" mid-sentence. Case-insensitive, per-line via Multiline.
     [GeneratedRegex(
-        @"ninuzzu.*shadow",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+        @"^\s*'[\s*]*(ninuzzu'?s\s+)?ball\s*shadow\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Multiline)]
     private static partial Regex BallShadowHeaderRegex();
+
+    // Matches the (fairly consistent) timer sub declaration.
+    [GeneratedRegex(
+        @"\bSub\s+BallShadowUpdate_timer\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex BallShadowTimerSubRegex();
+
+    // Matches the characteristic shadow-position line, ignoring whitespace and
+    // the variable trailing offset. Works even when the whole line is commented.
+    [GeneratedRegex(
+        @"BallShadow\(b\)\.X\s*=.*BOT\(b\)\.X.*Ballsize\s*/\s*6.*Table1\.Width\s*/\s*2.*/\s*7",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex BallShadowPositionRegex();
+
+    // Matches the VPW "dynamic ball shadows" constant. Its presence (even when
+    // commented out or set to 0) indicates the more advanced shadow system
+    // rather than the simple ninuzzu routine, so the table is not flagged.
+    [GeneratedRegex(
+        @"DynamicBallShadowsOn",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex DynamicBallShadowsRegex();
+
+    // The modification marker that indicates the routine was already upgraded.
+    private const string ModifiedMarker = "BALL SHADOW - MODIFIED (bthLonewolf)";
 
     public string Id => "ball-shadow-routine";
 
@@ -46,23 +86,27 @@ public sealed partial class BallShadowRoutineRule : ITableRule
             yield break;
         }
 
-        bool foundOriginal = false;
-        foreach (string line in script.Split('\n'))
+        // If the table already carries the modification marker anywhere, it has
+        // been upgraded; don't flag it regardless of the other signals.
+        if (script.IndexOf(ModifiedMarker, StringComparison.OrdinalIgnoreCase) >= 0)
         {
-            if (!BallShadowHeaderRegex().IsMatch(line))
-            {
-                continue;
-            }
-
-            // The improved/modified variant is already the recommended one; if
-            // it's present anywhere, don't flag the table at all.
-            if (line.IndexOf("MODIFIED", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                yield break;
-            }
-
-            foundOriginal = true;
+            yield break;
         }
+
+        // Tables using the advanced VPW "dynamic ball shadows" system are not
+        // running the simple ninuzzu routine; skip them.
+        if (DynamicBallShadowsRegex().IsMatch(script))
+        {
+            yield break;
+        }
+
+        // The routine is often tweaked per-table, so match on any of several
+        // stable signals: the header comment, the timer sub declaration, or the
+        // characteristic shadow-position line (even if commented out).
+        bool foundOriginal =
+            BallShadowHeaderRegex().IsMatch(script) ||
+            BallShadowTimerSubRegex().IsMatch(script) ||
+            BallShadowPositionRegex().IsMatch(script);
 
         if (foundOriginal)
         {

@@ -6,8 +6,9 @@ namespace VPin.Inspector.Platforms.Vpx;
 
 /// <summary>
 /// Applies a small, fixed set of in-place corrections to a .vpx file for the
-/// findings this tool can safely auto-fix. Only four rules are supported; every
-/// other finding is left for the user to correct by hand in VPX.
+/// findings this tool can safely auto-fix. Only a handful of rules are
+/// supported; every other finding is left for the user to correct by hand in
+/// VPX.
 ///
 /// Corrections are simple, fixed-width BIFF-record edits (no change in stream
 /// length), so the file layout is preserved. Per the analysis in
@@ -19,10 +20,12 @@ public static class VpxCorrectionWriter
     /// <summary>Rule ids this writer knows how to auto-fix.</summary>
     public static readonly IReadOnlySet<string> FixableRuleIds = new HashSet<string>(StringComparer.Ordinal)
     {
-        "ball-shadow-depth-mask", // primitive ZMSK -> 0 (uncheck "Hide parts behind")
-        "ball-shadow",            // timer TMIN -> -1
-        "slingshot",              // surface timer TMIN -> 30
-        "postitnote-alpha-mask",  // image ALTV -> 50
+        "ball-shadow-depth-mask",    // primitive ZMSK -> 0 (uncheck "Hide parts behind")
+        "flipper-shadow-depth-mask", // primitive ZMSK -> 0 (uncheck "Hide parts behind")
+        "ball-shadow",               // timer TMIN -> -1
+        "slingshot",                 // surface timer TMIN -> 30
+        "postitnote-alpha-mask",     // image ALTV -> 50
+        "ball-shadow-alpha-mask",    // image ALTV -> 1
     };
 
     /// <summary>True when the table has at least one finding this writer can fix.</summary>
@@ -102,12 +105,16 @@ public static class VpxCorrectionWriter
         {
             case "ball-shadow-depth-mask":
                 return WriteInt32Record(bytes, "ZMSK", 0);
+            case "flipper-shadow-depth-mask":
+                return WriteInt32Record(bytes, "ZMSK", 0);
             case "ball-shadow":
                 return WriteInt32Record(bytes, "TMIN", -1);
             case "slingshot":
                 return WriteInt32Record(bytes, "TMIN", 30);
             case "postitnote-alpha-mask":
                 return WriteImageFloatTag(bytes, "ALTV"u8, 50f);
+            case "ball-shadow-alpha-mask":
+                return WriteImageFloatTag(bytes, "ALTV"u8, 1f);
             default:
                 return false;
         }

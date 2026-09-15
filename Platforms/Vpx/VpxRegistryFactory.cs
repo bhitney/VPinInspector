@@ -70,6 +70,12 @@ public static class VpxRegistryFactory
         // 9. Built-in table rule: ball shadow image alpha mask must be -1, 0, or 1.
         registry.AddTableRule(new BallShadowAlphaMaskRule());
 
+        // 10. Built-in table rule: flipper shadow primitives must not hide parts behind.
+        registry.AddTableRule(new FlipperShadowDepthMaskRule());
+
+        // 11. Built-in table rule: GraphicsUpdate timer must be set to -1 (per-frame).
+        registry.AddTableRule(new GraphicsUpdateTimerRule());
+
         return registry;
     }
 }
