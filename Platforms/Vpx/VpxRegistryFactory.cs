@@ -76,6 +76,9 @@ public static class VpxRegistryFactory
         // 11. Built-in table rule: GraphicsUpdate timer must be set to -1 (per-frame).
         registry.AddTableRule(new GraphicsUpdateTimerRule());
 
+        // 12. Built-in table rule: flag timers with a very short interval (<10ms).
+        registry.AddTableRule(new FastTimerRule());
+
         return registry;
     }
 }

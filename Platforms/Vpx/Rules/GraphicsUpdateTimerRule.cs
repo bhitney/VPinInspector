@@ -55,10 +55,11 @@ public sealed class GraphicsUpdateTimerRule : ITableRule
 
             if (timer.TimerIntervalMs != -1)
             {
+                string state = timer.TimerEnabled ? "[ENABLED]" : "[DISABLED]";
                 yield return new Finding(
                     Id,
                     FindingSeverity.Warning,
-                    $"'{element.Name}' ({element.TypeName}) Graphics timer is " +
+                    $"'{element.Name}' ({element.TypeName}) {state} Graphics timer is " +
                     $"set to {timer.TimerIntervalMs}ms; it should be -1 (per-frame).")
                 {
                     Element = element,

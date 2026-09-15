@@ -72,12 +72,19 @@ public sealed class DeclarativeElementRule : ITableRule
         {
             if (Matches(element))
             {
-                yield return new Finding(
-                    Id,
-                    _severity,
-                    string.IsNullOrEmpty(_source.Description)
-                        ? $"'{element.Name}' ({element.TypeName}) matched rule '{Id}'."
-                        : _source.Description)
+                string message = string.IsNullOrEmpty(_source.Description)
+                    ? $"'{element.Name}' ({element.TypeName}) matched rule '{Id}'."
+                    : _source.Description;
+
+                // For timer-based rules, surface whether the timer is enabled so
+                // investigators can tell at a glance. It's informational only and
+                // doesn't affect whether the finding is raised.
+                if (_source.MustBeTimer && element is ITimerElement timer)
+                {
+                    message += timer.TimerEnabled ? " [ENABLED]" : " [DISABLED]";
+                }
+
+                yield return new Finding(Id, _severity, message)
                 {
                     Element = element,
                 };

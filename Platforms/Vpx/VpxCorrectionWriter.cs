@@ -23,6 +23,7 @@ public static class VpxCorrectionWriter
         "ball-shadow-depth-mask",    // primitive ZMSK -> 0 (uncheck "Hide parts behind")
         "flipper-shadow-depth-mask", // primitive ZMSK -> 0 (uncheck "Hide parts behind")
         "ball-shadow",               // timer TMIN -> -1
+        "graphics-update-timer",     // timer TMIN -> -1
         "slingshot",                 // surface timer TMIN -> 30
         "postitnote-alpha-mask",     // image ALTV -> 50
         "ball-shadow-alpha-mask",    // image ALTV -> 1
@@ -108,6 +109,8 @@ public static class VpxCorrectionWriter
             case "flipper-shadow-depth-mask":
                 return WriteInt32Record(bytes, "ZMSK", 0);
             case "ball-shadow":
+                return WriteInt32Record(bytes, "TMIN", -1);
+            case "graphics-update-timer":
                 return WriteInt32Record(bytes, "TMIN", -1);
             case "slingshot":
                 return WriteInt32Record(bytes, "TMIN", 30);

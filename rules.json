@@ -64,7 +64,7 @@
       "namePatterns": [ "BallShadowUpdate", "ShadowUpdateTimer", "ShadowTimer", "BallShadow", "*shadow*" ],
       "types": [ "Timer" ],
       "mustBeTimer": true,
-      "interval": ">=10",
+      "interval": ">=0",
       "suggest": -1,
       "severity": "error"
     },
