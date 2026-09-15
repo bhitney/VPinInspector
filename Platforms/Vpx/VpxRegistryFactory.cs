@@ -79,6 +79,9 @@ public static class VpxRegistryFactory
         // 12. Built-in table rule: flag timers with a very short interval (<10ms).
         registry.AddTableRule(new FastTimerRule());
 
+        // 13. Built-in table rule: high score tape primitives must not hide parts behind.
+        registry.AddTableRule(new HighScoreTapeRule());
+
         return registry;
     }
 }

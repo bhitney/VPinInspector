@@ -59,6 +59,25 @@ public sealed class VpxGameItem : TableElement, ITimerElement
     public const string HidePartsBehindKey = "HidePartsBehind";
 
     /// <summary>
+    /// Property-bag key for a primitive's "Static Rendering" flag (BIFF
+    /// <c>STRE</c> / <c>m_staticRendering</c>). Stored as a <see cref="bool"/>.
+    /// </summary>
+    public const string StaticRenderingKey = "StaticRendering";
+
+    /// <summary>
+    /// Property-bag key for a primitive's "Reflection Enabled" flag (BIFF
+    /// <c>REEN</c> / <c>m_reflectionEnabled</c>). Stored as a <see cref="bool"/>.
+    /// </summary>
+    public const string ReflectionEnabledKey = "ReflectionEnabled";
+
+    /// <summary>
+    /// Property-bag key for a primitive's "Toy" flag (BIFF <c>ISTO</c> /
+    /// <c>m_toy</c>). When true the primitive is a toy (never collidable);
+    /// when false it is collidable. Stored as a <see cref="bool"/>.
+    /// </summary>
+    public const string ToyKey = "Toy";
+
+    /// <summary>
     /// Ported from GameItem.Parse: reads NAME/TMON/TMIN from a GameItem stream.
     /// </summary>
     public static VpxGameItem Parse(string streamName, byte[] bytes)
@@ -69,6 +88,9 @@ public sealed class VpxGameItem : TableElement, ITimerElement
         bool timerEnabled = false;
         int timerInterval = -1;
         bool? hidePartsBehind = null;
+        bool? staticRendering = null;
+        bool? reflectionEnabled = null;
+        bool? toy = null;
 
         foreach (var record in records)
         {
@@ -86,6 +108,15 @@ public sealed class VpxGameItem : TableElement, ITimerElement
                 case "ZMSK":
                     hidePartsBehind = record.AsBool();
                     break;
+                case "STRE":
+                    staticRendering = record.AsBool();
+                    break;
+                case "REEN":
+                    reflectionEnabled = record.AsBool();
+                    break;
+                case "ISTO":
+                    toy = record.AsBool();
+                    break;
             }
         }
 
@@ -93,6 +124,18 @@ public sealed class VpxGameItem : TableElement, ITimerElement
         if (hidePartsBehind is not null)
         {
             properties[HidePartsBehindKey] = hidePartsBehind.Value;
+        }
+        if (staticRendering is not null)
+        {
+            properties[StaticRenderingKey] = staticRendering.Value;
+        }
+        if (reflectionEnabled is not null)
+        {
+            properties[ReflectionEnabledKey] = reflectionEnabled.Value;
+        }
+        if (toy is not null)
+        {
+            properties[ToyKey] = toy.Value;
         }
 
         return new VpxGameItem
