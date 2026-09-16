@@ -48,10 +48,13 @@ public sealed partial class BallShadowRoutineRule : ITableRule
     private static partial Regex BallShadowTimerSubRegex();
 
     // Matches the characteristic shadow-position line, ignoring whitespace and
-    // the variable trailing offset. Works even when the whole line is commented.
+    // the variable trailing offset. Anchored per-line and requires the line to
+    // NOT be commented before the assignment: a commented-out copy (often left
+    // behind when the author replaces it with a similar line) is not a reliable
+    // signal that the routine is active, so it's ignored.
     [GeneratedRegex(
-        @"BallShadow\(b\)\.X\s*=.*BOT\(b\)\.X.*Ballsize\s*/\s*6.*Table1\.Width\s*/\s*2.*/\s*7",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+        @"^(?:(?!').)*?BallShadow\(b\)\.X\s*=.*BOT\(b\)\.X.*Ballsize\s*/\s*6.*Table1\.Width\s*/\s*2.*/\s*7",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Multiline)]
     private static partial Regex BallShadowPositionRegex();
 
     // Matches the VPW "dynamic ball shadows" constant. Its presence (even when
