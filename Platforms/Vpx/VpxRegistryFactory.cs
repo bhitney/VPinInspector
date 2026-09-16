@@ -86,7 +86,10 @@ public static class VpxRegistryFactory
         // 13. Built-in table rule: high score tape primitives must not hide parts behind.
         registry.AddTableRule(new HighScoreTapeRule());
 
-        // 14. Opt-in table rule: user-configurable shadow depth-mask (custom regex).
+        // 14. Built-in table rule: script overrides BallShadowUpdate/Graphics timer interval (not -1).
+        registry.AddTableRule(new TimerOverrideRule());
+
+        // 15. Opt-in table rule: user-configurable shadow depth-mask (custom regex).
         registry.AddTableRule(new ConfigurableShadowRule(settings.ConfigurationChecks.ConfigurableShadow));
 
         return registry;
