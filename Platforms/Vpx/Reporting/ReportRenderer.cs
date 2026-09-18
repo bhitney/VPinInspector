@@ -71,10 +71,13 @@ public static class ReportRenderer
     }
 
     /// <summary>Formats the end-of-run summary checklist, totals, and collection findings.</summary>
-    public static string FormatSummary(ScanReport report, SummarySort sort = SummarySort.Alphabetical)
+    public static string FormatSummary(
+        ScanReport report,
+        SummarySort sort = SummarySort.Alphabetical,
+        IReadOnlyDictionary<string, string>? visibilityByFileName = null)
     {
         var sb = new StringBuilder();
-        foreach (RenderedLine line in BuildSummaryLines(report, sort))
+        foreach (RenderedLine line in BuildSummaryLines(report, sort, visibilityByFileName))
         {
             sb.AppendLine(line.Text);
         }
@@ -87,8 +90,15 @@ public static class ReportRenderer
     /// text; the UI colors them. This is the single source of truth for summary
     /// content so both front-ends stay consistent.
     /// </summary>
+    /// <param name="visibilityByFileName">
+    /// Optional map of table file name (no path) to PinUP visibility status label
+    /// (e.g. "Visible"). When supplied, each flagged table headline is prefixed
+    /// with "[Status] " when a match is found.
+    /// </param>
     public static IReadOnlyList<RenderedLine> BuildSummaryLines(
-        ScanReport report, SummarySort sort = SummarySort.Alphabetical)
+        ScanReport report,
+        SummarySort sort = SummarySort.Alphabetical,
+        IReadOnlyDictionary<string, string>? visibilityByFileName = null)
     {
         var lines = new List<RenderedLine>();
         void Info(string t) => lines.Add(RenderedLine.Info(t));
@@ -128,7 +138,8 @@ public static class ReportRenderer
             // count reflects the number of distinct rules violated, not the raw
             // number of flagged items (which can be dominated by one rule).
             int ruleCount = RuleViolationCount(table);
-            Line(table.Severity, $"[ ] {table.TableName}  ({ruleCount} rule(s) flagged)");
+            string visibilityTag = ResolveVisibilityTag(table, visibilityByFileName);
+            Line(table.Severity, $"[ ] {visibilityTag}{table.TableName}  ({ruleCount} rule(s) flagged)");
             foreach (var group in table.Findings.GroupBy(f => f.RuleId))
             {
                 FindingSeverity groupSeverity = group.Max(f => f.Severity);
@@ -230,6 +241,29 @@ public static class ReportRenderer
     /// </summary>
     private static int RuleViolationCount(TableReport table) =>
         table.Findings.Select(f => f.RuleId).Distinct(StringComparer.Ordinal).Count();
+
+    /// <summary>
+    /// Returns the "[Status] " prefix for a table when a PinUP visibility map is
+    /// supplied and the table's file name matches a Games entry; otherwise empty.
+    /// </summary>
+    private static string ResolveVisibilityTag(
+        TableReport table, IReadOnlyDictionary<string, string>? visibilityByFileName)
+    {
+        if (visibilityByFileName is null || visibilityByFileName.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        string fileName = Path.GetFileName(table.FilePath);
+        if (string.IsNullOrEmpty(fileName))
+        {
+            fileName = table.TableName;
+        }
+
+        return visibilityByFileName.TryGetValue(fileName, out string? status)
+            ? $"[{status}] "
+            : string.Empty;
+    }
 
     private static string DescribeElement(TableElement? element)
     {

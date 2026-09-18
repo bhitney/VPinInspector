@@ -32,8 +32,13 @@ public sealed class VersionCheckRule : ICollectionRule
         new[] { "GameName", "Manufact", "GameYear", "GAMEVER", "WEBGameID" };
 
     private readonly VersionCheckSettings _settings;
+    private readonly string _databasePath;
 
-    public VersionCheckRule(VersionCheckSettings settings) => _settings = settings;
+    public VersionCheckRule(VersionCheckSettings settings, string databasePath)
+    {
+        _settings = settings;
+        _databasePath = databasePath;
+    }
 
     public string Id => "version-check";
 
@@ -55,9 +60,9 @@ public sealed class VersionCheckRule : ICollectionRule
             yield break;
         }
 
-        if (!File.Exists(_settings.DatabasePath))
+        if (!File.Exists(_databasePath))
         {
-            yield return Info($"database not found at '{_settings.DatabasePath}'.");
+            yield return Info($"database not found at '{_databasePath}'.");
             yield break;
         }
 
@@ -101,7 +106,7 @@ public sealed class VersionCheckRule : ICollectionRule
         PupLookupTable lookup = PupLookupTable.Load(csvPath, Columns);
         PupLookupIndex index = PupLookupIndex.Build(lookup);
 
-        using PinupDatabase db = PinupDatabase.Open(_settings.DatabasePath);
+        using PinupDatabase db = PinupDatabase.Open(_databasePath);
 
         IReadOnlyList<PinupEmulator> emulators = db.GetEmulators();
         var emuIds = ResolveEmulatorIds(emulators, folder, _settings);

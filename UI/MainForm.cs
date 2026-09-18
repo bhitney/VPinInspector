@@ -35,6 +35,8 @@ public sealed class MainForm : Form
     private readonly TextBox _vpxExeBox;
     private readonly TextBox _dofConfigBox;
     private readonly ComboBox _sortModeBox;
+    private readonly TextBox _pinupDbBox;
+    private readonly CheckBox _checkPinupVisibilityBox;
     private readonly ToolTip _toolTip = new();
     private readonly SplitContainer _split;
     private readonly SplitContainer _outputSplit;
@@ -54,6 +56,10 @@ public sealed class MainForm : Form
     // (e.g. when the sort order changes) without rescanning.
     private ScanReport? _lastReport;
     private CancellationTokenSource? _cts;
+    // File-name -> PinUP visibility status label for the last scan (empty when
+    // the "Check Pinup Visibility" option is off).
+    private IReadOnlyDictionary<string, string> _visibilityByFileName =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     // Maps checklist table-name link text to the full .vpx file path to open.
     private readonly Dictionary<string, string> _tableLinkPaths =
         new(StringComparer.OrdinalIgnoreCase);
@@ -310,7 +316,7 @@ public sealed class MainForm : Form
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 2,
-            RowCount = 6,
+            RowCount = 8,
             Margin = new Padding(0),
             Padding = new Padding(0, 0, 0, 6),
         };
@@ -408,6 +414,32 @@ public sealed class MainForm : Form
         _toolTip.SetToolTip(_sortModeBox,
             "Orders the summary checklist alphabetically or by number of findings (most first).");
 
+        var pinupDbLabel = new Label
+        {
+            Text = "PinUP DB:",
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(3, 6, 6, 3),
+        };
+        _pinupDbBox = new TextBox
+        {
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
+            Margin = new Padding(3, 3, 3, 3),
+        };
+        _toolTip.SetToolTip(_pinupDbBox,
+            "Path to the PinUP Popper database (PUPDatabase.db), shared by all PinUP checks.");
+
+        _checkPinupVisibilityBox = new CheckBox
+        {
+            Text = "Check Pinup Visibility",
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(3, 3, 3, 3),
+        };
+        _toolTip.SetToolTip(_checkPinupVisibilityBox,
+            "Annotate each flagged table in the summary with its PinUP Popper visibility " +
+            "(Disabled/Visible/Mature/WIP), matched by file name to the Games table.");
+
         settingsPanel.Controls.Add(settingsHeader, 0, 0);
         settingsPanel.SetColumnSpan(settingsHeader, 2);
         settingsPanel.Controls.Add(excludeLabel, 0, 1);
@@ -420,6 +452,9 @@ public sealed class MainForm : Form
         settingsPanel.Controls.Add(_dofConfigBox, 1, 4);
         settingsPanel.Controls.Add(sortLabel, 0, 5);
         settingsPanel.Controls.Add(_sortModeBox, 1, 5);
+        settingsPanel.Controls.Add(pinupDbLabel, 0, 6);
+        settingsPanel.Controls.Add(_pinupDbBox, 1, 6);
+        settingsPanel.Controls.Add(_checkPinupVisibilityBox, 1, 7);
 
         rulesPanel.Controls.Add(_rulesTree);
         rulesPanel.Controls.Add(settingsPanel);
@@ -702,6 +737,8 @@ public sealed class MainForm : Form
         _excludeBox.Text = string.Join("; ", settings.ExcludePatterns);
         _vpxExeBox.Text = settings.VpxExecutablePath;
         _dofConfigBox.Text = settings.DofConfigPath;
+        _pinupDbBox.Text = settings.PinupDatabasePath;
+        _checkPinupVisibilityBox.Checked = settings.CheckPinupVisibility;
 
         decimal seconds = (decimal)settings.MaxRunTimeSeconds;
         _maxRunTime.Value = Math.Clamp(seconds, _maxRunTime.Minimum, _maxRunTime.Maximum);
@@ -723,6 +760,8 @@ public sealed class MainForm : Form
             ExcludePatterns = excludes,
             VpxExecutablePath = _vpxExeBox.Text.Trim(),
             DofConfigPath = _dofConfigBox.Text.Trim(),
+            PinupDatabasePath = _pinupDbBox.Text.Trim(),
+            CheckPinupVisibility = _checkPinupVisibilityBox.Checked,
             // Configuration checks aren't edited in the UI; carry file config through.
             ConfigurationChecks = _engine?.Settings.ConfigurationChecks ?? new ConfigurationChecksSettings(),
         };
@@ -911,6 +950,9 @@ public sealed class MainForm : Form
             var results = report.Tables.ToList();
 
             _lastReport = report;
+            _visibilityByFileName = settings.CheckPinupVisibility
+                ? await Task.Run(() => PinupVisibilityLookup.Build(settings.PinupDatabasePath))
+                : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             RenderSummary(report);
 
             if (results.Count < files.Count)
@@ -993,6 +1035,8 @@ public sealed class MainForm : Form
         _dofConfigBox.Enabled = !scanning;
         _openRulesLink.Enabled = !scanning;
         _sortModeBox.Enabled = !scanning;
+        _pinupDbBox.Enabled = !scanning;
+        _checkPinupVisibilityBox.Enabled = !scanning;
         _rescanFlaggedButton.Enabled = !scanning && _lastResults.Any(r => r.IsFlagged);
         _cancelButton.Enabled = scanning;
 
@@ -1100,7 +1144,7 @@ public sealed class MainForm : Form
     {
         Color defaultColor = _summaryBox.ForeColor;
 
-        foreach (RenderedLine line in ReportRenderer.BuildSummaryLines(report, CurrentSort))
+        foreach (RenderedLine line in ReportRenderer.BuildSummaryLines(report, CurrentSort, _visibilityByFileName))
         {
             Color tagColor = line.Severity switch
             {
@@ -1240,7 +1284,20 @@ public sealed class MainForm : Form
 
         foreach (string tableName in _tableLinkPaths.Keys)
         {
-            string needle = "[ ] " + tableName;
+            // The headline may carry a visibility prefix, e.g. "[ ] [Visible] Name".
+            string prefix = "[ ] ";
+            if (_visibilityByFileName.Count > 0)
+            {
+                string fileName = _tableLinkPaths[tableName] is { Length: > 0 } path
+                    ? Path.GetFileName(path)
+                    : tableName;
+                if (_visibilityByFileName.TryGetValue(fileName, out string? status))
+                {
+                    prefix = $"[ ] [{status}] ";
+                }
+            }
+
+            string needle = prefix + tableName;
             int searchFrom = 0;
             while (true)
             {
@@ -1250,7 +1307,7 @@ public sealed class MainForm : Form
                     break;
                 }
 
-                int nameStart = idx + "[ ] ".Length;
+                int nameStart = idx + prefix.Length;
                 _summaryBox.Select(nameStart, tableName.Length);
                 SetSelectionLink(true);
                 searchFrom = nameStart + tableName.Length;

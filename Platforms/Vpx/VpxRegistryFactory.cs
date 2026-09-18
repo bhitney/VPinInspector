@@ -44,13 +44,14 @@ public static class VpxRegistryFactory
         }
 
         // 3. Opt-in integrations (each reports its own EnabledByDefault from settings).
-        registry.AddCollectionRule(new PinupGameMatchRule(settings.ConfigurationChecks.PinupGameMatch));
-        registry.AddCollectionRule(new PinupMetadataCheckRule(settings.ConfigurationChecks.PinupMetadataCheck));
-        registry.AddCollectionRule(new PinupMediaMatchRule(settings.ConfigurationChecks.MediaMatch));
+        string pinupDatabasePath = settings.PinupDatabasePath;
+        registry.AddCollectionRule(new PinupGameMatchRule(settings.ConfigurationChecks.PinupGameMatch, pinupDatabasePath));
+        registry.AddCollectionRule(new PinupMetadataCheckRule(settings.ConfigurationChecks.PinupMetadataCheck, pinupDatabasePath));
+        registry.AddCollectionRule(new PinupMediaMatchRule(settings.ConfigurationChecks.MediaMatch, pinupDatabasePath));
         registry.AddCollectionRule(new VrRoomMatchRule(settings.ConfigurationChecks.VrRoomMatching));
         registry.AddCollectionRule(new DofLookupRule(settings.DofConfigPath));
-        registry.AddCollectionRule(new PupHygieneRule(settings.ConfigurationChecks.PupHygiene));
-        registry.AddCollectionRule(new VersionCheckRule(settings.ConfigurationChecks.VersionCheck));
+        registry.AddCollectionRule(new PupHygieneRule(settings.ConfigurationChecks.PupHygiene, pinupDatabasePath));
+        registry.AddCollectionRule(new VersionCheckRule(settings.ConfigurationChecks.VersionCheck, pinupDatabasePath));
 
         // 4. Built-in code rule: duplicate cGameName across the collection.
         registry.AddCollectionRule(new DuplicateGameNameRule());

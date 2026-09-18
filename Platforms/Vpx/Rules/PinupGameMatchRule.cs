@@ -14,8 +14,13 @@ namespace VPin.Inspector.Platforms.Vpx.Rules;
 public sealed class PinupGameMatchRule : ICollectionRule
 {
     private readonly PinupMatchSettings _settings;
+    private readonly string _databasePath;
 
-    public PinupGameMatchRule(PinupMatchSettings settings) => _settings = settings;
+    public PinupGameMatchRule(PinupMatchSettings settings, string databasePath)
+    {
+        _settings = settings;
+        _databasePath = databasePath;
+    }
 
     public string Id => "pinup-game-match";
 
@@ -37,9 +42,9 @@ public sealed class PinupGameMatchRule : ICollectionRule
             yield break;
         }
 
-        if (!File.Exists(_settings.DatabasePath))
+        if (!File.Exists(_databasePath))
         {
-            yield return Info($"database not found at '{_settings.DatabasePath}'.");
+            yield return Info($"database not found at '{_databasePath}'.");
             yield break;
         }
 
@@ -63,7 +68,7 @@ public sealed class PinupGameMatchRule : ICollectionRule
     {
         var findings = new List<Finding>();
 
-        using PinupDatabase db = PinupDatabase.Open(_settings.DatabasePath);
+        using PinupDatabase db = PinupDatabase.Open(_databasePath);
 
         IReadOnlyList<PinupEmulator> emulators = db.GetEmulators();
         var emuIds = ResolveEmulatorIds(emulators, folder, _settings);

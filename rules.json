@@ -4,11 +4,12 @@
     "excludePatterns": [ "VR ROOM*" ],
     "vpxExecutablePath": "C:\\vPinball\\VisualPinball\\vpinballx64.exe",
     "dofConfigPath": "C:\\DirectOutput\\Config\\directoutputconfig51.ini",
+    "databasePath": "C:\\vPinball\\PinUPSystem\\PUPDatabase.db",
+    "checkPinupVisibility": false,
     "configurationChecks": {
       "pinup-game-match": {
         "enabled": true,
         "respectExcludePatterns": false,
-        "databasePath": "C:\\vPinball\\PinUPSystem\\PUPDatabase.db",
         "emulatorIds": [],
         "matchEmulatorsByFolder": true,
         "visibleOnly": false
@@ -16,7 +17,6 @@
       "pinup-metadata-check": {
         "enabled": true,
         "respectExcludePatterns": false,
-        "databasePath": "C:\\vPinball\\PinUPSystem\\PUPDatabase.db",
         "emulatorIds": [],
         "matchEmulatorsByFolder": true,
         "visibleOnly": false
@@ -24,7 +24,6 @@
       "media-match": {
         "enabled": true,
         "respectExcludePatterns": false,
-        "databasePath": "C:\\vPinball\\PinUPSystem\\PUPDatabase.db",
         "emulatorIds": [7,10],
         "matchEmulatorsByFolder": true,
         "visibleOnly": false,
@@ -38,7 +37,6 @@
       "pup-hygiene": {
         "enabled": true,
         "respectExcludePatterns": false,
-        "databasePath": "C:\\vPinball\\PinUPSystem\\PUPDatabase.db",
         "emulatorIds": [],
         "matchEmulatorsByFolder": true,
         "visibleOnly": false,
@@ -48,7 +46,6 @@
       "version-check": {
         "enabled": true,
         "respectExcludePatterns": false,
-        "databasePath": "C:\\vPinball\\PinUPSystem\\PUPDatabase.db",
         "emulatorIds": [],
         "matchEmulatorsByFolder": true,
         "visibleOnly": false,

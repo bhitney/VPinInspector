@@ -207,11 +207,12 @@ Examples: `">=10"`, `"<10"`, `">40"`, `"==135"`, `"100"`.
 "settings": {
   "maxRunTimeSeconds": 0,           // 0 = no limit; >0 stops the scan after N seconds.
   "excludePatterns": [ "VR ROOM*" ],// file-name globs to skip (case-insensitive).
+  "databasePath": "C:\\vPinball\\PinUPSystem\\PUPDatabase.db", // shared by all PinUP checks.
+  "checkPinupVisibility": false,    // annotate flagged tables with their PinUP visibility.
   "configurationChecks": {          // collection-scope checks (see below).
     "pinup-game-match": {
       "enabled": true,
       "respectExcludePatterns": false,
-      "databasePath": "C:\\vPinball\\PinUPSystem\\PUPDatabase.db",
       "emulatorIds": [],
       "matchEmulatorsByFolder": true,
       "visibleOnly": false
@@ -222,6 +223,17 @@ Examples: `">=10"`, `"<10"`, `">40"`, `"==135"`, `"100"`.
 
 `maxRunTimeSeconds` and `excludePatterns` can also be edited live in the GUI's
 **Settings** panel (overrides the file for that run without saving).
+
+`databasePath` is the single, shared path to the PinUP Popper `PUPDatabase.db`
+used by every PinUP check (both quick and deep) and by the visibility lookup.
+
+When `checkPinupVisibility` is `true`, the deep-analysis summary annotates each
+flagged table with its current PinUP visibility — matched by file name (no path)
+to the Games table's `GameFileName` — e.g.
+`[ ] [Visible] Argosy (Williams 1977).vpx  (1 rule(s) flagged)`. The `Visible`
+column maps as `0=Disabled`, `1=Visible`, `2=Mature`, `3=WIP`. When `false`, the
+database is not consulted for visibility. This too can be toggled live in the
+GUI's **Settings** panel.
 
 ---
 
@@ -248,7 +260,6 @@ Compares `.vpx` files in the folder against games in the PinUP Popper database.
 
 | Field | Meaning |
 |---|---|
-| `databasePath` | Path to `PUPDatabase.db`. |
 | `emulatorIds` | Explicit emulator IDs (EMUID) to include, e.g. `[1, 7, 10]`. |
 | `matchEmulatorsByFolder` | Also include emulators whose `DirGames` equals the scanned folder (normalized). |
 | `visibleOnly` | Restrict to Visible emulators/games. |
@@ -269,7 +280,6 @@ Each media folder is checked independently, so you can target just one media typ
 
 | Field | Meaning |
 |---|---|
-| `databasePath` | Path to `PUPDatabase.db`. |
 | `emulatorIds` | Explicit emulator IDs (EMUID) to include, e.g. `[1, 7, 10]`. When supplied, these take precedence and `matchEmulatorsByFolder` is ignored — letting you audit media for any games in the database regardless of where their `.vpx` files sit. |
 | `matchEmulatorsByFolder` | Used only when `emulatorIds` is empty: include emulators whose `DirGames` equals the scanned folder (normalized). |
 | `visibleOnly` | Restrict to Visible emulators/games. |
@@ -305,7 +315,6 @@ parenthesized groups, and drops edition/mod noise tokens — so
 
 | Field | Meaning |
 |---|---|
-| `databasePath` | Path to `PUPDatabase.db`. |
 | `emulatorIds` | Explicit EMUIDs to include (empty = resolve by folder). |
 | `matchEmulatorsByFolder` | Also include emulators whose DirGames points at the scanned folder. |
 | `visibleOnly` | Only consider games/emulators marked Visible. |
@@ -327,7 +336,6 @@ anything ambiguous falls into the "unknown" bucket rather than guessing.
 
 | Field | Meaning |
 |---|---|
-| `databasePath` | Path to `PUPDatabase.db`. |
 | `emulatorIds` | Explicit EMUIDs to include (empty = resolve by folder). |
 | `matchEmulatorsByFolder` | Also include emulators whose DirGames points at the scanned folder. |
 | `visibleOnly` | Only consider games/emulators marked Visible. |

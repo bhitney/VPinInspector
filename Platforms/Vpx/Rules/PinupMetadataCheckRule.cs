@@ -20,8 +20,13 @@ namespace VPin.Inspector.Platforms.Vpx.Rules;
 public sealed class PinupMetadataCheckRule : ICollectionRule
 {
     private readonly PinupMetadataCheckSettings _settings;
+    private readonly string _databasePath;
 
-    public PinupMetadataCheckRule(PinupMetadataCheckSettings settings) => _settings = settings;
+    public PinupMetadataCheckRule(PinupMetadataCheckSettings settings, string databasePath)
+    {
+        _settings = settings;
+        _databasePath = databasePath;
+    }
 
     public string Id => "pinup-metadata-check";
 
@@ -43,9 +48,9 @@ public sealed class PinupMetadataCheckRule : ICollectionRule
             yield break;
         }
 
-        if (!File.Exists(_settings.DatabasePath))
+        if (!File.Exists(_databasePath))
         {
-            yield return Info($"database not found at '{_settings.DatabasePath}'.");
+            yield return Info($"database not found at '{_databasePath}'.");
             yield break;
         }
 
@@ -69,7 +74,7 @@ public sealed class PinupMetadataCheckRule : ICollectionRule
     {
         var findings = new List<Finding>();
 
-        using PinupDatabase db = PinupDatabase.Open(_settings.DatabasePath);
+        using PinupDatabase db = PinupDatabase.Open(_databasePath);
 
         IReadOnlyList<PinupEmulator> emulators = db.GetEmulators();
         var emuIds = ResolveEmulatorIds(emulators, folder, _settings);

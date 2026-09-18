@@ -63,6 +63,23 @@ public sealed class InspectionSettings
     public string DofConfigPath { get; init; } = string.Empty;
 
     /// <summary>
+    /// Path to the PinUP Popper SQLite database (PUPDatabase.db), shared by every
+    /// PinUP check (quick and deep) and the visibility lookup. Defaults to the
+    /// standard install location when empty.
+    /// </summary>
+    [JsonPropertyName("databasePath")]
+    public string PinupDatabasePath { get; init; } = @"C:\vPinball\PinUPSystem\PUPDatabase.db";
+
+    /// <summary>
+    /// When true, the deep-analysis summary annotates each flagged table with its
+    /// current PinUP Popper visibility status (Disabled/Visible/Mature/WIP),
+    /// resolved by matching the table's file name to the Games table's
+    /// GameFileName column. When false, PinUP is not consulted for visibility.
+    /// </summary>
+    [JsonPropertyName("checkPinupVisibility")]
+    public bool CheckPinupVisibility { get; init; }
+
+    /// <summary>
     /// Configuration (collection-scope) checks, keyed by check id. Each check has
     /// its own strongly-typed settings block.
     /// </summary>
@@ -132,13 +149,6 @@ public abstract class ConfigurationCheckSettings
 public sealed class PinupMatchSettings : ConfigurationCheckSettings
 {
     /// <summary>
-    /// Path to the PinUP Popper SQLite database. Defaults to the standard
-    /// install location when empty.
-    /// </summary>
-    [JsonPropertyName("databasePath")]
-    public string DatabasePath { get; init; } = @"C:\vPinball\PinUPSystem\PUPDatabase.db";
-
-    /// <summary>
     /// Explicit emulator IDs (EMUID) to include, e.g. [ 1, 7, 10 ]. May be empty
     /// when relying on <see cref="MatchEmulatorsByFolder"/>.
     /// </summary>
@@ -168,13 +178,6 @@ public sealed class PinupMatchSettings : ConfigurationCheckSettings
 /// </summary>
 public sealed class PinupMetadataCheckSettings : ConfigurationCheckSettings
 {
-    /// <summary>
-    /// Path to the PinUP Popper SQLite database. Defaults to the standard
-    /// install location when empty.
-    /// </summary>
-    [JsonPropertyName("databasePath")]
-    public string DatabasePath { get; init; } = @"C:\vPinball\PinUPSystem\PUPDatabase.db";
-
     /// <summary>
     /// Explicit emulator IDs (EMUID) to include, e.g. [ 1, 7, 10 ]. May be empty
     /// when relying on <see cref="MatchEmulatorsByFolder"/>.
@@ -206,13 +209,6 @@ public sealed class PinupMetadataCheckSettings : ConfigurationCheckSettings
 /// </summary>
 public sealed class PinupMediaMatchSettings : ConfigurationCheckSettings
 {
-    /// <summary>
-    /// Path to the PinUP Popper SQLite database. Defaults to the standard
-    /// install location when empty.
-    /// </summary>
-    [JsonPropertyName("databasePath")]
-    public string DatabasePath { get; init; } = @"C:\vPinball\PinUPSystem\PUPDatabase.db";
-
     /// <summary>
     /// Explicit emulator IDs (EMUID) to include, e.g. [ 1, 7, 10 ]. When any are
     /// supplied they take precedence and <see cref="MatchEmulatorsByFolder"/> is
@@ -269,13 +265,6 @@ public sealed class VrRoomMatchSettings : ConfigurationCheckSettings
 public sealed class PupHygieneSettings : ConfigurationCheckSettings
 {
     /// <summary>
-    /// Path to the PinUP Popper SQLite database. Defaults to the standard
-    /// install location when empty.
-    /// </summary>
-    [JsonPropertyName("databasePath")]
-    public string DatabasePath { get; init; } = @"C:\vPinball\PinUPSystem\PUPDatabase.db";
-
-    /// <summary>
     /// Explicit emulator IDs (EMUID) to include, e.g. [ 1, 7, 10 ]. May be empty
     /// when relying on <see cref="MatchEmulatorsByFolder"/>.
     /// </summary>
@@ -320,13 +309,6 @@ public sealed class PupHygieneSettings : ConfigurationCheckSettings
 /// </summary>
 public sealed class VersionCheckSettings : ConfigurationCheckSettings
 {
-    /// <summary>
-    /// Path to the PinUP Popper SQLite database. Defaults to the standard
-    /// install location when empty.
-    /// </summary>
-    [JsonPropertyName("databasePath")]
-    public string DatabasePath { get; init; } = @"C:\vPinball\PinUPSystem\PUPDatabase.db";
-
     /// <summary>
     /// Explicit emulator IDs (EMUID) to include, e.g. [ 1, 7, 10 ]. May be empty
     /// when relying on <see cref="MatchEmulatorsByFolder"/>.

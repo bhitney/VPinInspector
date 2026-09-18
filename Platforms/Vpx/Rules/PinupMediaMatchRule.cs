@@ -12,8 +12,13 @@ namespace VPin.Inspector.Platforms.Vpx.Rules;
 public sealed class PinupMediaMatchRule : ICollectionRule
 {
     private readonly PinupMediaMatchSettings _settings;
+    private readonly string _databasePath;
 
-    public PinupMediaMatchRule(PinupMediaMatchSettings settings) => _settings = settings;
+    public PinupMediaMatchRule(PinupMediaMatchSettings settings, string databasePath)
+    {
+        _settings = settings;
+        _databasePath = databasePath;
+    }
 
     public string Id => "media-match";
 
@@ -35,9 +40,9 @@ public sealed class PinupMediaMatchRule : ICollectionRule
             yield break;
         }
 
-        if (!File.Exists(_settings.DatabasePath))
+        if (!File.Exists(_databasePath))
         {
-            yield return Info($"database not found at '{_settings.DatabasePath}'.");
+            yield return Info($"database not found at '{_databasePath}'.");
             yield break;
         }
 
@@ -74,7 +79,7 @@ public sealed class PinupMediaMatchRule : ICollectionRule
     {
         var findings = new List<Finding>();
 
-        using PinupDatabase db = PinupDatabase.Open(_settings.DatabasePath);
+        using PinupDatabase db = PinupDatabase.Open(_databasePath);
 
         IReadOnlyList<PinupEmulator> emulators = db.GetEmulators();
         var emuIds = ResolveEmulatorIds(emulators, folder, _settings);

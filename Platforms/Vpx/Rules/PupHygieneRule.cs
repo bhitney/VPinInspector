@@ -20,8 +20,13 @@ public sealed class PupHygieneRule : ICollectionRule
     private const double MatchThreshold = 0.5;
 
     private readonly PupHygieneSettings _settings;
+    private readonly string _databasePath;
 
-    public PupHygieneRule(PupHygieneSettings settings) => _settings = settings;
+    public PupHygieneRule(PupHygieneSettings settings, string databasePath)
+    {
+        _settings = settings;
+        _databasePath = databasePath;
+    }
 
     public string Id => "pup-hygiene";
 
@@ -43,9 +48,9 @@ public sealed class PupHygieneRule : ICollectionRule
             yield break;
         }
 
-        if (!File.Exists(_settings.DatabasePath))
+        if (!File.Exists(_databasePath))
         {
-            yield return Info($"database not found at '{_settings.DatabasePath}'.");
+            yield return Info($"database not found at '{_databasePath}'.");
             yield break;
         }
 
@@ -92,7 +97,7 @@ public sealed class PupHygieneRule : ICollectionRule
         PupLookupTable lookup = PupLookupTable.Load(csvPath, columns);
         PupLookupIndex index = PupLookupIndex.Build(lookup);
 
-        using PinupDatabase db = PinupDatabase.Open(_settings.DatabasePath);
+        using PinupDatabase db = PinupDatabase.Open(_databasePath);
 
         IReadOnlyList<PinupEmulator> emulators = db.GetEmulators();
         var emuIds = ResolveEmulatorIds(emulators, folder, _settings);

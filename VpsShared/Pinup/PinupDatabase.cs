@@ -474,5 +474,39 @@ public sealed class PinupDatabase : IDisposable
         return null;
     }
 
+    /// <summary>
+    /// Returns a map of every game's file name (GameFileName) to its raw PinUP
+    /// visibility code (0 = Disabled, 1 = Visible, 2 = Mature, 3 = WIP). Games
+    /// with an empty file name are skipped. When two rows share a file name the
+    /// first one wins. The lookup is case-insensitive on the file name.
+    /// </summary>
+    public IReadOnlyDictionary<string, int> GetVisibilityByFileName()
+    {
+        var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        using SqliteCommand cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT GameFileName, Visible FROM Games";
+
+        using SqliteDataReader reader = cmd.ExecuteReader();
+        while (reader.Read())
+        {
+            if (reader.IsDBNull(0))
+            {
+                continue;
+            }
+
+            string fileName = reader.GetString(0).Trim();
+            if (fileName.Length == 0)
+            {
+                continue;
+            }
+
+            int visible = reader.IsDBNull(1) ? 0 : reader.GetInt32(1);
+            map.TryAdd(fileName, visible);
+        }
+
+        return map;
+    }
+
     public void Dispose() => _connection.Dispose();
 }
