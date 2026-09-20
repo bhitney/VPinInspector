@@ -45,6 +45,12 @@ public sealed class ScanOptions
     /// as skipped. Null or empty = hide nothing.
     /// </summary>
     public IReadOnlySet<string>? HiddenFileNames { get; init; }
+
+    /// <summary>
+    /// When true, folder discovery descends into subdirectories. Defaults to
+    /// false so only the top-level tables folder is scanned.
+    /// </summary>
+    public bool Recursive { get; init; }
 }
 
 /// <summary>
@@ -82,7 +88,12 @@ public sealed class InspectionService
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             var files = Directory
-                .EnumerateFiles(inputPath, "*.*", SearchOption.AllDirectories)
+                .EnumerateFiles(
+                    inputPath,
+                    "*.*",
+                    options.Recursive
+                        ? SearchOption.AllDirectories
+                        : SearchOption.TopDirectoryOnly)
                 .Where(f => extensions.Contains(Path.GetExtension(f)))
                 .Where(f => exclude is null || !exclude.IsMatch(Path.GetFileName(f)))
                 .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
@@ -143,6 +154,7 @@ public sealed class InspectionService
                     ExplicitFiles = options.ExplicitFiles,
                     RunCollectionRules = options.RunCollectionRules,
                     HiddenFileNames = null,
+                    Recursive = options.Recursive,
                 });
             skippedTableCount = unfiltered.Count - files.Count;
         }

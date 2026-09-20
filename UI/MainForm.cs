@@ -22,6 +22,7 @@ public sealed class MainForm : Form
 {
     private readonly TextBox _folderBox;
     private readonly Button _browseButton;
+    private readonly CheckBox _recursiveBox;
     private readonly Button _scanButton;
     private readonly Button _rescanFlaggedButton;
     private readonly Button _reloadRulesButton;
@@ -166,6 +167,17 @@ public sealed class MainForm : Form
         };
         _browseButton.Click += OnBrowse;
 
+        // Recursive discovery is opt-in; by default only the top-level tables
+        // folder is scanned.
+        _recursiveBox = new CheckBox
+        {
+            Text = "Search subfolders",
+            AutoSize = true,
+            Checked = false,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(3, 6, 3, 3),
+        };
+
         // Button row lives in a flow panel so buttons size to their text and
         // wrap/space consistently at any DPI.
         var buttonFlow = new FlowLayoutPanel
@@ -195,6 +207,7 @@ public sealed class MainForm : Form
         buttonFlow.Controls.Add(_rescanFlaggedButton);
         buttonFlow.Controls.Add(_reloadRulesButton);
         buttonFlow.Controls.Add(_cancelButton);
+        buttonFlow.Controls.Add(_recursiveBox);
 
         topPanel.Controls.Add(folderLabel, 0, 0);
         topPanel.Controls.Add(_folderBox, 1, 0);
@@ -1052,6 +1065,7 @@ public sealed class MainForm : Form
                 {
                     ExcludePatterns = settings.ExcludePatterns,
                     HiddenFileNames = _hiddenTables.Load(),
+                    Recursive = _recursiveBox.Checked,
                 }).ToList();
             if (files.Count == 0)
             {
@@ -1088,6 +1102,8 @@ public sealed class MainForm : Form
             RunCollectionRules = mode == ScanMode.Full,
             // Skip tables the user has hidden via hidden_tables.json.
             HiddenFileNames = _hiddenTables.Load(),
+            // Recursive subfolder discovery is opt-in via the UI checkbox.
+            Recursive = _recursiveBox.Checked,
         };
 
         _cts = new CancellationTokenSource();
