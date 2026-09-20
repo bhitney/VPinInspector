@@ -28,13 +28,21 @@ public enum SummarySort
 /// <see cref="PinupVisibilityLookup.UnknownVisibility"/> for not-matched
 /// tables). Null or empty means "all" (no visibility filtering).
 /// </param>
-public readonly record struct SummaryFilter(int MinRating, IReadOnlySet<int>? Visibilities)
+/// <param name="RuleIds">
+/// The set of rule ids a table must have flagged at least one of to be shown.
+/// Null or empty means "all" (no rule filtering). A table still lists every rule
+/// it violated; this only gates whether the table is included.
+/// </param>
+public readonly record struct SummaryFilter(
+    int MinRating,
+    IReadOnlySet<int>? Visibilities,
+    IReadOnlySet<string>? RuleIds = null)
 {
     /// <summary>
     /// Returns true when the given cross-reference (may be null for unmatched
-    /// tables) satisfies this filter.
+    /// tables) and the table's flagged rule ids satisfy this filter.
     /// </summary>
-    public bool Matches(PinupCrossRef? crossRef)
+    public bool Matches(PinupCrossRef? crossRef, IReadOnlySet<string> flaggedRuleIds)
     {
         if (MinRating > 0)
         {
@@ -49,6 +57,15 @@ public readonly record struct SummaryFilter(int MinRating, IReadOnlySet<int>? Vi
         {
             int actual = crossRef?.Visibility ?? PinupVisibilityLookup.UnknownVisibility;
             if (!wanted.Contains(actual))
+            {
+                return false;
+            }
+        }
+
+        if (RuleIds is { Count: > 0 } wantedRules)
+        {
+            // The table must have flagged at least one of the selected rules.
+            if (!wantedRules.Overlaps(flaggedRuleIds))
             {
                 return false;
             }
@@ -183,12 +200,17 @@ public static class ReportRenderer
                 continue; // clean tables omitted to reduce noise
             }
 
-            // Apply the optional cross-reference filter (min rating / exact
-            // visibility). Tables that don't satisfy it are omitted.
-            if (filter is { } activeFilter
-                && !activeFilter.Matches(ResolveCrossRef(table, crossRefByFileName)))
+            // Apply the optional summary filter (min rating / visibility / rule
+            // ids). Tables that don't satisfy it are omitted.
+            if (filter is { } activeFilter)
             {
-                continue;
+                var flaggedRuleIds = table.Findings
+                    .Select(f => f.RuleId)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                if (!activeFilter.Matches(ResolveCrossRef(table, crossRefByFileName), flaggedRuleIds))
+                {
+                    continue;
+                }
             }
 
             // The table headline takes the table's overall (max) severity. The

@@ -41,6 +41,11 @@ public sealed class MainForm : Form
     private readonly Button _visibilityFilterButton;
     private readonly ContextMenuStrip _visibilityFilterMenu;
     private readonly ToolStripMenuItem[] _visibilityFilterItems;
+    private readonly Button _ruleFilterButton;
+    private readonly ContextMenuStrip _ruleFilterMenu;
+    // Checked rule ids in the rule filter, preserved across re-renders.
+    private readonly HashSet<string> _ruleFilterSelection =
+        new(StringComparer.OrdinalIgnoreCase);
     private readonly ToolTip _toolTip = new();
     private readonly SplitContainer _split;
     private readonly SplitContainer _outputSplit;
@@ -263,6 +268,7 @@ public sealed class MainForm : Form
         // or above the selection (0 = no filter). Visibility shows only tables
         // whose PinUP visibility matches exactly ("All" = no filter).
         _minRatingFilterBox = MakeFilterCombo();
+        _minRatingFilterBox.Width = 150;
         _minRatingFilterBox.Items.AddRange(new object[]
         {
             "Min Rating: 0", "Min Rating: 1", "Min Rating: 2",
@@ -295,6 +301,7 @@ public sealed class MainForm : Form
             ForeColor = DarkTheme.Foreground,
             ShowCheckMargin = true,
             ShowImageMargin = false,
+            Renderer = DarkTheme.CreateMenuRenderer(),
         };
         string[] visibilityNames = { "Unknown", "Disabled", "Visible", "Mature", "WIP" };
         _visibilityFilterItems = new ToolStripMenuItem[visibilityNames.Length];
@@ -318,8 +325,44 @@ public sealed class MainForm : Form
             "Show tables whose PinUP visibility matches any checked category. " +
             "No boxes checked shows everything; 'Unknown' means tables not found in the Games table.");
 
+        _ruleFilterButton = new Button
+        {
+            Text = "Rules: All",
+            AutoSize = true,
+            FlatStyle = FlatStyle.Flat,
+            TextAlign = ContentAlignment.MiddleLeft,
+            BackColor = DarkTheme.Surface,
+            ForeColor = DarkTheme.Foreground,
+            Margin = new Padding(0, 0, 8, 0),
+            MinimumSize = new Size(130, 0),
+        };
+        _ruleFilterButton.FlatAppearance.BorderColor = DarkTheme.Border;
+
+        // Checkable menu populated after each scan with the flagged rule ids.
+        // No boxes checked = "All" (no rule filtering).
+        _ruleFilterMenu = new ContextMenuStrip
+        {
+            BackColor = DarkTheme.Surface,
+            ForeColor = DarkTheme.Foreground,
+            ShowCheckMargin = true,
+            ShowImageMargin = false,
+            Renderer = DarkTheme.CreateMenuRenderer(),
+        };
+        _ruleFilterButton.Click += (_, _) =>
+        {
+            if (_ruleFilterMenu.Items.Count > 0)
+            {
+                _ruleFilterMenu.Show(_ruleFilterButton,
+                    new Point(0, _ruleFilterButton.Height));
+            }
+        };
+        _toolTip.SetToolTip(_ruleFilterButton,
+            "Show only tables that flagged at least one of the checked rules. " +
+            "Each shown table still lists all of its violations. No boxes checked shows everything.");
+
         legend.Controls.Add(_minRatingFilterBox);
         legend.Controls.Add(_visibilityFilterButton);
+        legend.Controls.Add(_ruleFilterButton);
 
         var summaryPanel = new Panel { Dock = DockStyle.Fill };
         summaryPanel.Controls.Add(_summaryBox);
@@ -1087,6 +1130,7 @@ public sealed class MainForm : Form
             _crossRefByFileName = settings.CheckPinupVisibility
                 ? await Task.Run(() => PinupVisibilityLookup.Build(settings.PinupDatabasePath))
                 : new Dictionary<string, PinupCrossRef>(StringComparer.OrdinalIgnoreCase);
+            PopulateRuleFilterMenu(report);
             RenderSummary(report);
 
             if (results.Count < files.Count)
@@ -1285,7 +1329,10 @@ public sealed class MainForm : Form
 
             return new SummaryFilter(
                 minRating,
-                visibilities.Count > 0 ? visibilities : null);
+                visibilities.Count > 0 ? visibilities : null,
+                _ruleFilterSelection.Count > 0
+                    ? new HashSet<string>(_ruleFilterSelection, StringComparer.OrdinalIgnoreCase)
+                    : null);
         }
     }
 
@@ -1305,6 +1352,68 @@ public sealed class MainForm : Form
             : "Visibility: " + string.Join(", ", checkedNames);
 
         OnSummaryFilterChanged(sender, e);
+    }
+
+    /// <summary>
+    /// Rebuilds the rule filter menu from the rule ids flagged in the given
+    /// report, preserving any still-valid checked selections. Called after each
+    /// scan so the filter offers exactly the rules that appear in the summary.
+    /// </summary>
+    private void PopulateRuleFilterMenu(ScanReport report)
+    {
+        var flaggedRuleIds = report.Tables
+            .SelectMany(t => t.Findings)
+            .Select(f => f.RuleId)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        // Drop selections for rules no longer present so the label stays honest.
+        _ruleFilterSelection.IntersectWith(flaggedRuleIds);
+
+        _ruleFilterMenu.Items.Clear();
+        foreach (string ruleId in flaggedRuleIds)
+        {
+            var item = new ToolStripMenuItem(ruleId)
+            {
+                CheckOnClick = true,
+                Checked = _ruleFilterSelection.Contains(ruleId),
+                BackColor = DarkTheme.Surface,
+                ForeColor = DarkTheme.Foreground,
+            };
+            item.CheckedChanged += OnRuleFilterItemChanged;
+            _ruleFilterMenu.Items.Add(item);
+        }
+
+        UpdateRuleFilterButtonLabel();
+    }
+
+    /// <summary>Tracks a rule filter toggle and re-renders the retained report.</summary>
+    private void OnRuleFilterItemChanged(object? sender, EventArgs e)
+    {
+        if (sender is ToolStripMenuItem item)
+        {
+            if (item.Checked)
+            {
+                _ruleFilterSelection.Add(item.Text);
+            }
+            else
+            {
+                _ruleFilterSelection.Remove(item.Text);
+            }
+        }
+
+        UpdateRuleFilterButtonLabel();
+        OnSummaryFilterChanged(sender, e);
+    }
+
+    /// <summary>Refreshes the rule filter button label from the current selection.</summary>
+    private void UpdateRuleFilterButtonLabel()
+    {
+        _ruleFilterButton.Text = _ruleFilterSelection.Count == 0
+            ? "Rules: All"
+            : "Rules: " + string.Join(", ", _ruleFilterSelection.OrderBy(
+                id => id, StringComparer.OrdinalIgnoreCase));
     }
 
     /// <summary>Re-renders the retained report when the sort order changes.</summary>

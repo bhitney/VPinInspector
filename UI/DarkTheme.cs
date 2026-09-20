@@ -226,5 +226,16 @@ internal static class DarkTheme
         public override Color MenuStripGradientEnd => Surface;
         public override Color SeparatorDark => Border;
         public override Color SeparatorLight => Border;
+        public override Color CheckBackground => Control;
+        public override Color CheckSelectedBackground => Accent;
+        public override Color CheckPressedBackground => Accent;
     }
+
+    /// <summary>
+    /// Creates a menu renderer that matches the dark theme, including dark
+    /// checkbox glyph backgrounds. Use for context menus built after the
+    /// initial <see cref="Apply"/> pass.
+    /// </summary>
+    public static ToolStripProfessionalRenderer CreateMenuRenderer() =>
+        new(new DarkColorTable());
 }
