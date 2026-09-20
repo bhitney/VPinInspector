@@ -93,6 +93,9 @@ public static class VpxRegistryFactory
         // 15. Opt-in table rule: user-configurable shadow depth-mask (custom regex).
         registry.AddTableRule(new ConfigurableShadowRule(settings.ConfigurationChecks.ConfigurableShadow));
 
+        // 16. Built-in table rule: flag B2SSetData 1nn, 2 calls introduced during manual fixes.
+        registry.AddTableRule(new OpErrorRule());
+
         return registry;
     }
 }

@@ -16,6 +16,49 @@ public enum SummarySort
 }
 
 /// <summary>
+/// Dynamic filter applied to the summary checklist based on cross-referenced
+/// PinUP info.
+/// </summary>
+/// <param name="MinRating">
+/// Minimum game rating (inclusive) a table must have to be shown. 0 disables the
+/// rating filter (all tables pass, including those with no/unknown rating).
+/// </param>
+/// <param name="Visibilities">
+/// The set of visibility codes to include (use
+/// <see cref="PinupVisibilityLookup.UnknownVisibility"/> for not-matched
+/// tables). Null or empty means "all" (no visibility filtering).
+/// </param>
+public readonly record struct SummaryFilter(int MinRating, IReadOnlySet<int>? Visibilities)
+{
+    /// <summary>
+    /// Returns true when the given cross-reference (may be null for unmatched
+    /// tables) satisfies this filter.
+    /// </summary>
+    public bool Matches(PinupCrossRef? crossRef)
+    {
+        if (MinRating > 0)
+        {
+            // Tables with no rating (null) never satisfy an explicit minimum.
+            if (crossRef?.Rating is not { } rating || rating < MinRating)
+            {
+                return false;
+            }
+        }
+
+        if (Visibilities is { Count: > 0 } wanted)
+        {
+            int actual = crossRef?.Visibility ?? PinupVisibilityLookup.UnknownVisibility;
+            if (!wanted.Contains(actual))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+}
+
+/// <summary>
 /// Renders a <see cref="ScanReport"/> to human-readable text for the console and
 /// UI. Replaces the legacy ReportFormatter; consumes only neutral Core types.
 /// </summary>
@@ -74,10 +117,11 @@ public static class ReportRenderer
     public static string FormatSummary(
         ScanReport report,
         SummarySort sort = SummarySort.Alphabetical,
-        IReadOnlyDictionary<string, string>? visibilityByFileName = null)
+        IReadOnlyDictionary<string, PinupCrossRef>? crossRefByFileName = null,
+        SummaryFilter? filter = null)
     {
         var sb = new StringBuilder();
-        foreach (RenderedLine line in BuildSummaryLines(report, sort, visibilityByFileName))
+        foreach (RenderedLine line in BuildSummaryLines(report, sort, crossRefByFileName, filter))
         {
             sb.AppendLine(line.Text);
         }
@@ -90,15 +134,20 @@ public static class ReportRenderer
     /// text; the UI colors them. This is the single source of truth for summary
     /// content so both front-ends stay consistent.
     /// </summary>
-    /// <param name="visibilityByFileName">
-    /// Optional map of table file name (no path) to PinUP visibility status label
-    /// (e.g. "Visible"). When supplied, each flagged table headline is prefixed
-    /// with "[Status] " when a match is found.
+    /// <param name="crossRefByFileName">
+    /// Optional map of table file name (no path) to cross-referenced PinUP info
+    /// (visibility status label + rating). When supplied, each flagged table
+    /// headline is prefixed with "[Status] [Rating: N] " when a match is found.
+    /// </param>
+    /// <param name="filter">
+    /// Optional summary filter (minimum rating and/or exact visibility). Tables
+    /// that don't satisfy the filter are omitted from the checklist.
     /// </param>
     public static IReadOnlyList<RenderedLine> BuildSummaryLines(
         ScanReport report,
         SummarySort sort = SummarySort.Alphabetical,
-        IReadOnlyDictionary<string, string>? visibilityByFileName = null)
+        IReadOnlyDictionary<string, PinupCrossRef>? crossRefByFileName = null,
+        SummaryFilter? filter = null)
     {
         var lines = new List<RenderedLine>();
         void Info(string t) => lines.Add(RenderedLine.Info(t));
@@ -134,11 +183,19 @@ public static class ReportRenderer
                 continue; // clean tables omitted to reduce noise
             }
 
+            // Apply the optional cross-reference filter (min rating / exact
+            // visibility). Tables that don't satisfy it are omitted.
+            if (filter is { } activeFilter
+                && !activeFilter.Matches(ResolveCrossRef(table, crossRefByFileName)))
+            {
+                continue;
+            }
+
             // The table headline takes the table's overall (max) severity. The
             // count reflects the number of distinct rules violated, not the raw
             // number of flagged items (which can be dominated by one rule).
             int ruleCount = RuleViolationCount(table);
-            string visibilityTag = ResolveVisibilityTag(table, visibilityByFileName);
+            string visibilityTag = ResolveCrossRefTag(table, crossRefByFileName);
             Line(table.Severity, $"[ ] {visibilityTag}{table.TableName}  ({ruleCount} rule(s) flagged)");
             foreach (var group in table.Findings.GroupBy(f => f.RuleId))
             {
@@ -243,15 +300,15 @@ public static class ReportRenderer
         table.Findings.Select(f => f.RuleId).Distinct(StringComparer.Ordinal).Count();
 
     /// <summary>
-    /// Returns the "[Status] " prefix for a table when a PinUP visibility map is
-    /// supplied and the table's file name matches a Games entry; otherwise empty.
+    /// Returns the cross-referenced PinUP entry for a table (matched by file
+    /// name), or null when no map is supplied or the table isn't matched.
     /// </summary>
-    private static string ResolveVisibilityTag(
-        TableReport table, IReadOnlyDictionary<string, string>? visibilityByFileName)
+    private static PinupCrossRef? ResolveCrossRef(
+        TableReport table, IReadOnlyDictionary<string, PinupCrossRef>? crossRefByFileName)
     {
-        if (visibilityByFileName is null || visibilityByFileName.Count == 0)
+        if (crossRefByFileName is null || crossRefByFileName.Count == 0)
         {
-            return string.Empty;
+            return null;
         }
 
         string fileName = Path.GetFileName(table.FilePath);
@@ -260,9 +317,27 @@ public static class ReportRenderer
             fileName = table.TableName;
         }
 
-        return visibilityByFileName.TryGetValue(fileName, out string? status)
-            ? $"[{status}] "
-            : string.Empty;
+        return crossRefByFileName.TryGetValue(fileName, out PinupCrossRef? crossRef)
+            ? crossRef
+            : null;
+    }
+
+    /// <summary>
+    /// Returns the "[Status] [Rating: N] " prefix for a table when a PinUP
+    /// cross-reference map is supplied and the table's file name matches a Games
+    /// entry; otherwise empty. Rating shows "n/a" when null.
+    /// </summary>
+    private static string ResolveCrossRefTag(
+        TableReport table, IReadOnlyDictionary<string, PinupCrossRef>? crossRefByFileName)
+    {
+        PinupCrossRef? crossRef = ResolveCrossRef(table, crossRefByFileName);
+        if (crossRef is null)
+        {
+            return string.Empty;
+        }
+
+        string rating = crossRef.Rating is { } r ? r.ToString() : "n/a";
+        return $"[{crossRef.StatusLabel}] [Rating: {rating}] ";
     }
 
     private static string DescribeElement(TableElement? element)

@@ -9,6 +9,13 @@ public sealed record PinupEmulator(int EmuId, string EmuName, string DirGames, b
 public sealed record PinupGame(int EmuId, string GameName, string GameFileName, bool Visible);
 
 /// <summary>
+/// Combined PinUP info for a game, keyed by file name: the raw visibility code
+/// (0 = Disabled, 1 = Visible, 2 = Mature, 3 = WIP) and the game rating (0-5, or
+/// null when missing/empty).
+/// </summary>
+public sealed record PinupGameInfo(int Visibility, int? Rating);
+
+/// <summary>
 /// A game's identity used by the PinUP hygiene check: its display GameName plus
 /// the descriptive Manufacturer, Year, and Version, as recorded in the PinUP
 /// Popper Games table. Compared against the VPS puplookup.csv reference file.
@@ -501,12 +508,64 @@ public sealed class PinupDatabase : IDisposable
                 continue;
             }
 
-            int visible = reader.IsDBNull(1) ? 0 : reader.GetInt32(1);
-            map.TryAdd(fileName, visible);
-        }
+                    int visible = reader.IsDBNull(1) ? 0 : reader.GetInt32(1);
+                        map.TryAdd(fileName, visible);
+                    }
 
-        return map;
-    }
+                    return map;
+                }
 
-    public void Dispose() => _connection.Dispose();
-}
+                /// <summary>
+                /// Returns a map of every game's file name (GameFileName) to its combined
+                /// PinUP info: raw visibility code (0 = Disabled, 1 = Visible, 2 = Mature,
+                /// 3 = WIP) and the game rating (0-5, or null when missing/empty). Games with
+                /// an empty file name are skipped. When two rows share a file name the first
+                /// one wins. The lookup is case-insensitive on the file name.
+                /// </summary>
+                public IReadOnlyDictionary<string, PinupGameInfo> GetGameInfoByFileName()
+                {
+                    var map = new Dictionary<string, PinupGameInfo>(StringComparer.OrdinalIgnoreCase);
+
+                    string? ratingColumn = ResolveGamesColumn("GameRating", "Rating");
+                    string ratingSelect = ratingColumn is null ? "NULL" : ratingColumn;
+
+                    using SqliteCommand cmd = _connection.CreateCommand();
+                    cmd.CommandText = $"SELECT GameFileName, Visible, {ratingSelect} FROM Games";
+
+                    using SqliteDataReader reader = cmd.ExecuteReader();
+                    while (reader.Read())
+                    {
+                        if (reader.IsDBNull(0))
+                        {
+                            continue;
+                        }
+
+                        string fileName = reader.GetString(0).Trim();
+                        if (fileName.Length == 0)
+                        {
+                            continue;
+                        }
+
+                        int visible = reader.IsDBNull(1) ? 0 : reader.GetInt32(1);
+
+                        int? rating = null;
+                        if (!reader.IsDBNull(2))
+                        {
+                            // GameRating may be stored as a number or a string; parse both.
+                            string raw = reader.GetValue(2)?.ToString()?.Trim() ?? string.Empty;
+                            if (raw.Length > 0
+                                && double.TryParse(raw, System.Globalization.NumberStyles.Any,
+                                    System.Globalization.CultureInfo.InvariantCulture, out double parsed))
+                            {
+                                rating = (int)Math.Round(parsed);
+                            }
+                        }
+
+                        map.TryAdd(fileName, new PinupGameInfo(visible, rating));
+                    }
+
+                    return map;
+                }
+
+                public void Dispose() => _connection.Dispose();
+            }

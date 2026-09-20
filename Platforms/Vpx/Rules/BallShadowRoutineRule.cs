@@ -65,6 +65,47 @@ public sealed partial class BallShadowRoutineRule : ITableRule
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex DynamicBallShadowsRegex();
 
+    // Matches a "ZSHA" comment header used by tables that already ship a modern
+    // ambient ball-shadow implementation. Only the "' ZSHA" prefix is required,
+    // since the label text varies between tables. Whitespace is ignored between
+    // the comment marker and "ZSHA". When present alongside a BSInit sub, the
+    // table is considered good and not flagged.
+    [GeneratedRegex(
+        @"'\s*ZSHA",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex ZshaAmbientRegex();
+
+    // Matches the "Sub BSInit()" declaration that accompanies the ZSHA ambient
+    // ball-shadow implementation.
+    [GeneratedRegex(
+        @"\bSub\s+BSInit\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex BsInitSubRegex();
+
+    // Matches the "JP's VP10 Rolling Sounds + Ballshadow" comment header, which
+    // identifies a known-good ball-shadow implementation. Whitespace is ignored
+    // between tokens.
+    [GeneratedRegex(
+        @"'\s*JP's\s+VP10\s+Rolling\s+Sounds\s*\+\s*Ballshadow",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex JpRollingSoundsRegex();
+
+    // Matches the "marker - bthLonewolf" tag (e.g. "' altshadow marker -
+    // bthLonewolf") that authors add to indicate a known-good ball-shadow
+    // implementation. Whitespace around the dash is ignored.
+    [GeneratedRegex(
+        @"marker\s*-\s*bthLonewolf",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex MarkerBthLonewolfRegex();
+
+    // Matches a GlowBall signal: either an "IF GlowBall..." statement or a
+    // "Glow Ball code" comment. Tables using glowing balls typically don't use
+    // ball shadows, so their presence indicates a likely false positive.
+    [GeneratedRegex(
+        @"\bIf\s+GlowBall|Glow\s*Ball\s+code",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex GlowBallRegex();
+
     // The modification marker that indicates the routine was already upgraded.
     private const string ModifiedMarker = "BALL SHADOW - MODIFIED (bthLonewolf)";
 
@@ -99,6 +140,35 @@ public sealed partial class BallShadowRoutineRule : ITableRule
         // Tables using the advanced VPW "dynamic ball shadows" system are not
         // running the simple ninuzzu routine; skip them.
         if (DynamicBallShadowsRegex().IsMatch(script))
+        {
+            yield break;
+        }
+
+        // Tables that ship the modern ZSHA ambient ball-shadow implementation
+        // (header comment + BSInit sub) are considered good; skip them.
+        if (ZshaAmbientRegex().IsMatch(script) && BsInitSubRegex().IsMatch(script))
+        {
+            yield break;
+        }
+
+        // Tables using JP's VP10 Rolling Sounds + Ballshadow implementation are
+        // considered good; skip them.
+        if (JpRollingSoundsRegex().IsMatch(script))
+        {
+            yield break;
+        }
+
+        // Tables carrying a "marker - bthLonewolf" tag have a known-good
+        // ball-shadow implementation; skip them.
+        if (MarkerBthLonewolfRegex().IsMatch(script))
+        {
+            yield break;
+        }
+
+        // Tables using glowing balls (an "IF GlowBall..." statement or a
+        // "Glow Ball code" comment) typically don't use ball shadows, so this is
+        // a likely false positive; skip them.
+        if (GlowBallRegex().IsMatch(script))
         {
             yield break;
         }

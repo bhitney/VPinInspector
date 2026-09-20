@@ -37,6 +37,10 @@ public sealed class MainForm : Form
     private readonly ComboBox _sortModeBox;
     private readonly TextBox _pinupDbBox;
     private readonly CheckBox _checkPinupVisibilityBox;
+    private readonly ComboBox _minRatingFilterBox;
+    private readonly Button _visibilityFilterButton;
+    private readonly ContextMenuStrip _visibilityFilterMenu;
+    private readonly ToolStripMenuItem[] _visibilityFilterItems;
     private readonly ToolTip _toolTip = new();
     private readonly SplitContainer _split;
     private readonly SplitContainer _outputSplit;
@@ -56,10 +60,10 @@ public sealed class MainForm : Form
     // (e.g. when the sort order changes) without rescanning.
     private ScanReport? _lastReport;
     private CancellationTokenSource? _cts;
-    // File-name -> PinUP visibility status label for the last scan (empty when
-    // the "Check Pinup Visibility" option is off).
-    private IReadOnlyDictionary<string, string> _visibilityByFileName =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    // File-name -> cross-referenced PinUP info (visibility + rating) for the
+    // last scan (empty when the "Cross Reference Pinup" option is off).
+    private IReadOnlyDictionary<string, PinupCrossRef> _crossRefByFileName =
+        new Dictionary<string, PinupCrossRef>(StringComparer.OrdinalIgnoreCase);
     // Maps checklist table-name link text to the full .vpx file path to open.
     private readonly Dictionary<string, string> _tableLinkPaths =
         new(StringComparer.OrdinalIgnoreCase);
@@ -77,6 +81,10 @@ public sealed class MainForm : Form
     // Manages hidden_tables.json (next to the executable) so hidden tables are
     // skipped on future scans.
     private readonly HiddenTablesStore _hiddenTables = new();
+
+    // Manages rule_selection.json (next to the executable) so the checked state
+    // of each rule in the tree survives between runs.
+    private readonly RuleSelectionStore _ruleSelection = new();
 
     public MainForm()
     {
@@ -250,6 +258,68 @@ public sealed class MainForm : Form
         legend.Controls.Add(MakeLegendItem("Error", DarkTheme.Error));
         legend.Controls.Add(MakeLegendItem("Warning", DarkTheme.Warning));
         legend.Controls.Add(MakeLegendItem("Info", DarkTheme.Foreground));
+
+        // Dark-themed dynamic summary filters. Min Rating shows tables rated at
+        // or above the selection (0 = no filter). Visibility shows only tables
+        // whose PinUP visibility matches exactly ("All" = no filter).
+        _minRatingFilterBox = MakeFilterCombo();
+        _minRatingFilterBox.Items.AddRange(new object[]
+        {
+            "Min Rating: 0", "Min Rating: 1", "Min Rating: 2",
+            "Min Rating: 3", "Min Rating: 4", "Min Rating: 5",
+        });
+        _minRatingFilterBox.SelectedIndex = 0;
+        _minRatingFilterBox.SelectedIndexChanged += OnSummaryFilterChanged;
+        _toolTip.SetToolTip(_minRatingFilterBox,
+            "Show only tables whose PinUP game rating is at least this value. " +
+            "0 shows all tables (including unrated).");
+
+        _visibilityFilterButton = new Button
+        {
+            Text = "Visibility: All",
+            AutoSize = true,
+            FlatStyle = FlatStyle.Flat,
+            TextAlign = ContentAlignment.MiddleLeft,
+            BackColor = DarkTheme.Surface,
+            ForeColor = DarkTheme.Foreground,
+            Margin = new Padding(0, 0, 8, 0),
+            MinimumSize = new Size(130, 0),
+        };
+        _visibilityFilterButton.FlatAppearance.BorderColor = DarkTheme.Border;
+
+        // Checkable menu: each visibility category can be toggled independently.
+        // No boxes checked = "All" (no filtering).
+        _visibilityFilterMenu = new ContextMenuStrip
+        {
+            BackColor = DarkTheme.Surface,
+            ForeColor = DarkTheme.Foreground,
+            ShowCheckMargin = true,
+            ShowImageMargin = false,
+        };
+        string[] visibilityNames = { "Unknown", "Disabled", "Visible", "Mature", "WIP" };
+        _visibilityFilterItems = new ToolStripMenuItem[visibilityNames.Length];
+        for (int i = 0; i < visibilityNames.Length; i++)
+        {
+            var item = new ToolStripMenuItem(visibilityNames[i])
+            {
+                CheckOnClick = true,
+                BackColor = DarkTheme.Surface,
+                ForeColor = DarkTheme.Foreground,
+            };
+            item.CheckedChanged += OnVisibilityFilterItemChanged;
+            _visibilityFilterItems[i] = item;
+            _visibilityFilterMenu.Items.Add(item);
+        }
+
+        _visibilityFilterButton.Click += (_, _) =>
+            _visibilityFilterMenu.Show(_visibilityFilterButton,
+                new Point(0, _visibilityFilterButton.Height));
+        _toolTip.SetToolTip(_visibilityFilterButton,
+            "Show tables whose PinUP visibility matches any checked category. " +
+            "No boxes checked shows everything; 'Unknown' means tables not found in the Games table.");
+
+        legend.Controls.Add(_minRatingFilterBox);
+        legend.Controls.Add(_visibilityFilterButton);
 
         var summaryPanel = new Panel { Dock = DockStyle.Fill };
         summaryPanel.Controls.Add(_summaryBox);
@@ -431,14 +501,14 @@ public sealed class MainForm : Form
 
         _checkPinupVisibilityBox = new CheckBox
         {
-            Text = "Check Pinup Visibility",
+            Text = "Cross Reference Pinup",
             AutoSize = true,
             Anchor = AnchorStyles.Left,
             Margin = new Padding(3, 3, 3, 3),
         };
         _toolTip.SetToolTip(_checkPinupVisibilityBox,
             "Annotate each flagged table in the summary with its PinUP Popper visibility " +
-            "(Disabled/Visible/Mature/WIP), matched by file name to the Games table.");
+            "(Disabled/Visible/Mature/WIP) and game rating, matched by file name to the Games table.");
 
         settingsPanel.Controls.Add(settingsHeader, 0, 0);
         settingsPanel.SetColumnSpan(settingsHeader, 2);
@@ -528,6 +598,17 @@ public sealed class MainForm : Form
         ForeColor = color,
         AutoSize = true,
         Margin = new Padding(0, 0, 12, 0),
+    };
+
+    /// <summary>Builds a compact dark-themed dropdown for the summary filters.</summary>
+    private static ComboBox MakeFilterCombo() => new()
+    {
+        DropDownStyle = ComboBoxStyle.DropDownList,
+        FlatStyle = FlatStyle.Flat,
+        Width = 130,
+        Margin = new Padding(0, 0, 8, 0),
+        BackColor = DarkTheme.Surface,
+        ForeColor = DarkTheme.Foreground,
     };
 
     protected override void OnShown(EventArgs e)
@@ -653,12 +734,20 @@ public sealed class MainForm : Form
         var quickParent = new TreeNode("Quick Checks") { Tag = GroupTag };
         var deepParent = new TreeNode("Deep Analysis") { Tag = GroupTag };
 
+        // Restore the user's saved rule selection; rules missing from the file
+        // fall back to their EnabledByDefault so new rules aren't suppressed.
+        IReadOnlyDictionary<string, bool> savedSelection = _ruleSelection.Load();
+
         void AddRule(IInspectionRule rule, bool isConfiguration)
         {
+            bool isChecked = savedSelection.TryGetValue(rule.Id, out bool saved)
+                ? saved
+                : rule.EnabledByDefault;
+
             var node = new TreeNode($"{rule.Id}  —  {rule.Description}")
             {
                 Tag = new CheckNodeTag(rule.Id, IsConfiguration: isConfiguration),
-                Checked = rule.EnabledByDefault,
+                Checked = isChecked,
                 ToolTipText = rule.Description,
             };
 
@@ -679,9 +768,20 @@ public sealed class MainForm : Form
         _rulesTree.Nodes.Add(quickParent);
         _rulesTree.Nodes.Add(deepParent);
 
-        // Parent checkboxes reflect children and start expanded.
-        quickParent.Checked = quickParent.Nodes.Cast<TreeNode>().Any(n => n.Checked);
-        deepParent.Checked = deepParent.Nodes.Cast<TreeNode>().Any(n => n.Checked);
+        // Parent checkboxes reflect children and start expanded. Suppress the
+        // AfterCheck cascade so setting the parent state doesn't overwrite the
+        // just-restored per-rule checked state of the children.
+        _suppressTreeCheck = true;
+        try
+        {
+            quickParent.Checked = quickParent.Nodes.Cast<TreeNode>().Any(n => n.Checked);
+            deepParent.Checked = deepParent.Nodes.Cast<TreeNode>().Any(n => n.Checked);
+        }
+        finally
+        {
+            _suppressTreeCheck = false;
+        }
+
         quickParent.Expand();
         deepParent.Expand();
 
@@ -789,6 +889,40 @@ public sealed class MainForm : Form
         }
 
         return ids;
+    }
+
+    /// <summary>
+    /// Collects the checked state of every leaf rule node (id -> checked) so it
+    /// can be persisted and restored on the next run.
+    /// </summary>
+    private Dictionary<string, bool> CollectRuleSelection()
+    {
+        var selection = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (TreeNode parent in _rulesTree.Nodes)
+        {
+            foreach (TreeNode leaf in parent.Nodes)
+            {
+                if (leaf.Tag is CheckNodeTag tag)
+                {
+                    selection[tag.Id] = leaf.Checked;
+                }
+            }
+        }
+
+        return selection;
+    }
+
+    /// <summary>Persists the current rule selection when the window closes.</summary>
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        // Only save when a real tree was loaded (not the error placeholder).
+        if (_engine is not null)
+        {
+            _ruleSelection.Save(CollectRuleSelection());
+        }
+
+        base.OnFormClosing(e);
     }
 
     private void OnOpenRules(object? sender, LinkLabelLinkClickedEventArgs e)
@@ -950,9 +1084,9 @@ public sealed class MainForm : Form
             var results = report.Tables.ToList();
 
             _lastReport = report;
-            _visibilityByFileName = settings.CheckPinupVisibility
+            _crossRefByFileName = settings.CheckPinupVisibility
                 ? await Task.Run(() => PinupVisibilityLookup.Build(settings.PinupDatabasePath))
-                : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                : new Dictionary<string, PinupCrossRef>(StringComparer.OrdinalIgnoreCase);
             RenderSummary(report);
 
             if (results.Count < files.Count)
@@ -1126,8 +1260,64 @@ public sealed class MainForm : Form
             ? SummarySort.FindingCountDescending
             : SummarySort.Alphabetical;
 
+    /// <summary>
+    /// The summary filter currently selected in the summary header controls.
+    /// Min Rating index maps directly to the minimum rating (0 = no filter);
+    /// the visibility menu contributes the set of checked categories (empty =
+    /// no filter). Menu order is Unknown(-1), Disabled(0), Visible(1),
+    /// Mature(2), WIP(3).
+    /// </summary>
+    private SummaryFilter CurrentFilter
+    {
+        get
+        {
+            int minRating = Math.Max(0, _minRatingFilterBox.SelectedIndex);
+
+            var visibilities = new HashSet<int>();
+            for (int i = 0; i < _visibilityFilterItems.Length; i++)
+            {
+                if (_visibilityFilterItems[i].Checked)
+                {
+                    // Menu index 0 = Unknown(-1); 1..4 = codes 0..3.
+                    visibilities.Add(i - 1);
+                }
+            }
+
+            return new SummaryFilter(
+                minRating,
+                visibilities.Count > 0 ? visibilities : null);
+        }
+    }
+
+    /// <summary>
+    /// Updates the visibility filter button label to reflect the checked
+    /// categories and re-renders the retained report.
+    /// </summary>
+    private void OnVisibilityFilterItemChanged(object? sender, EventArgs e)
+    {
+        var checkedNames = _visibilityFilterItems
+            .Where(item => item.Checked)
+            .Select(item => item.Text)
+            .ToList();
+
+        _visibilityFilterButton.Text = checkedNames.Count == 0
+            ? "Visibility: All"
+            : "Visibility: " + string.Join(", ", checkedNames);
+
+        OnSummaryFilterChanged(sender, e);
+    }
+
     /// <summary>Re-renders the retained report when the sort order changes.</summary>
     private void OnSortModeChanged(object? sender, EventArgs e)
+    {
+        if (_lastReport is not null)
+        {
+            RenderSummary(_lastReport);
+        }
+    }
+
+    /// <summary>Re-renders the retained report when a summary filter changes.</summary>
+    private void OnSummaryFilterChanged(object? sender, EventArgs e)
     {
         if (_lastReport is not null)
         {
@@ -1144,7 +1334,7 @@ public sealed class MainForm : Form
     {
         Color defaultColor = _summaryBox.ForeColor;
 
-        foreach (RenderedLine line in ReportRenderer.BuildSummaryLines(report, CurrentSort, _visibilityByFileName))
+        foreach (RenderedLine line in ReportRenderer.BuildSummaryLines(report, CurrentSort, _crossRefByFileName, CurrentFilter))
         {
             Color tagColor = line.Severity switch
             {
@@ -1284,16 +1474,18 @@ public sealed class MainForm : Form
 
         foreach (string tableName in _tableLinkPaths.Keys)
         {
-            // The headline may carry a visibility prefix, e.g. "[ ] [Visible] Name".
+            // The headline may carry a cross-ref prefix, e.g.
+            // "[ ] [Visible] [Rating: 5] Name". Must match ReportRenderer.
             string prefix = "[ ] ";
-            if (_visibilityByFileName.Count > 0)
+            if (_crossRefByFileName.Count > 0)
             {
                 string fileName = _tableLinkPaths[tableName] is { Length: > 0 } path
                     ? Path.GetFileName(path)
                     : tableName;
-                if (_visibilityByFileName.TryGetValue(fileName, out string? status))
+                if (_crossRefByFileName.TryGetValue(fileName, out PinupCrossRef? crossRef))
                 {
-                    prefix = $"[ ] [{status}] ";
+                    string rating = crossRef.Rating is { } r ? r.ToString() : "n/a";
+                    prefix = $"[ ] [{crossRef.StatusLabel}] [Rating: {rating}] ";
                 }
             }
 
