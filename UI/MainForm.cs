@@ -32,6 +32,7 @@ public sealed class MainForm : Form
     private readonly TreeView _rulesTree;
     private readonly LinkLabel _openRulesLink;
     private readonly TextBox _excludeBox;
+    private readonly TextBox _includeBox;
     private readonly NumericUpDown _maxRunTime;
     private readonly TextBox _vpxExeBox;
     private readonly TextBox _dofConfigBox;
@@ -91,6 +92,11 @@ public sealed class MainForm : Form
     // Manages rule_selection.json (next to the executable) so the checked state
     // of each rule in the tree survives between runs.
     private readonly RuleSelectionStore _ruleSelection = new();
+
+    // Manages ui_preferences.json (next to the executable) so the Settings-panel
+    // choices (exclude/include, sort mode, PinUP cross reference, paths, scan
+    // folder, recursive) survive between runs.
+    private readonly UiPreferencesStore _uiPreferences = new();
 
     public MainForm()
     {
@@ -442,7 +448,7 @@ public sealed class MainForm : Form
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 2,
-            RowCount = 8,
+            RowCount = 9,
             Margin = new Padding(0),
             Padding = new Padding(0, 0, 0, 6),
         };
@@ -470,6 +476,22 @@ public sealed class MainForm : Form
             Margin = new Padding(3, 3, 3, 3),
         };
         _toolTip.SetToolTip(_excludeBox, "Semicolon-separated file-name globs to skip, e.g. VR ROOM*; *backup*");
+
+        var includeLabel = new Label
+        {
+            Text = "Include:",
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(3, 6, 6, 3),
+        };
+        _includeBox = new TextBox
+        {
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
+            Margin = new Padding(3, 3, 3, 3),
+        };
+        _toolTip.SetToolTip(_includeBox,
+            "Semicolon-separated file-name globs a table must match to be scanned, e.g. *VPW*. " +
+            "Empty = include everything. Exclude patterns still win.");
 
         var maxTimeLabel = new Label
         {
@@ -570,17 +592,19 @@ public sealed class MainForm : Form
         settingsPanel.SetColumnSpan(settingsHeader, 2);
         settingsPanel.Controls.Add(excludeLabel, 0, 1);
         settingsPanel.Controls.Add(_excludeBox, 1, 1);
-        settingsPanel.Controls.Add(maxTimeLabel, 0, 2);
-        settingsPanel.Controls.Add(_maxRunTime, 1, 2);
-        settingsPanel.Controls.Add(vpxExeLabel, 0, 3);
-        settingsPanel.Controls.Add(_vpxExeBox, 1, 3);
-        settingsPanel.Controls.Add(dofConfigLabel, 0, 4);
-        settingsPanel.Controls.Add(_dofConfigBox, 1, 4);
-        settingsPanel.Controls.Add(sortLabel, 0, 5);
-        settingsPanel.Controls.Add(_sortModeBox, 1, 5);
-        settingsPanel.Controls.Add(pinupDbLabel, 0, 6);
-        settingsPanel.Controls.Add(_pinupDbBox, 1, 6);
-        settingsPanel.Controls.Add(_checkPinupVisibilityBox, 1, 7);
+        settingsPanel.Controls.Add(includeLabel, 0, 2);
+        settingsPanel.Controls.Add(_includeBox, 1, 2);
+        settingsPanel.Controls.Add(maxTimeLabel, 0, 3);
+        settingsPanel.Controls.Add(_maxRunTime, 1, 3);
+        settingsPanel.Controls.Add(vpxExeLabel, 0, 4);
+        settingsPanel.Controls.Add(_vpxExeBox, 1, 4);
+        settingsPanel.Controls.Add(dofConfigLabel, 0, 5);
+        settingsPanel.Controls.Add(_dofConfigBox, 1, 5);
+        settingsPanel.Controls.Add(sortLabel, 0, 6);
+        settingsPanel.Controls.Add(_sortModeBox, 1, 6);
+        settingsPanel.Controls.Add(pinupDbLabel, 0, 7);
+        settingsPanel.Controls.Add(_pinupDbBox, 1, 7);
+        settingsPanel.Controls.Add(_checkPinupVisibilityBox, 1, 8);
 
         rulesPanel.Controls.Add(_rulesTree);
         rulesPanel.Controls.Add(settingsPanel);
@@ -890,14 +914,36 @@ public sealed class MainForm : Form
         }
 
         InspectionSettings settings = _engine.Settings;
-        _excludeBox.Text = string.Join("; ", settings.ExcludePatterns);
-        _vpxExeBox.Text = settings.VpxExecutablePath;
-        _dofConfigBox.Text = settings.DofConfigPath;
-        _pinupDbBox.Text = settings.PinupDatabasePath;
-        _checkPinupVisibilityBox.Checked = settings.CheckPinupVisibility;
 
-        decimal seconds = (decimal)settings.MaxRunTimeSeconds;
+        // Saved UI preferences take precedence over the rules.json defaults, so
+        // the user's last edits in the Settings panel are restored on load.
+        UiPreferences prefs = _uiPreferences.Load();
+
+        _excludeBox.Text = string.Join("; ", prefs.ExcludePatterns ?? settings.ExcludePatterns);
+        _includeBox.Text = string.Join("; ", prefs.IncludePatterns ?? settings.IncludePatterns);
+        _vpxExeBox.Text = prefs.VpxExecutablePath ?? settings.VpxExecutablePath;
+        _dofConfigBox.Text = prefs.DofConfigPath ?? settings.DofConfigPath;
+        _pinupDbBox.Text = prefs.PinupDatabasePath ?? settings.PinupDatabasePath;
+        _checkPinupVisibilityBox.Checked = prefs.CheckPinupVisibility ?? settings.CheckPinupVisibility;
+
+        decimal seconds = (decimal)(prefs.MaxRunTimeSeconds ?? settings.MaxRunTimeSeconds);
         _maxRunTime.Value = Math.Clamp(seconds, _maxRunTime.Minimum, _maxRunTime.Maximum);
+
+        if (prefs.SortModeIndex is { } sortIndex &&
+            sortIndex >= 0 && sortIndex < _sortModeBox.Items.Count)
+        {
+            _sortModeBox.SelectedIndex = sortIndex;
+        }
+
+        if (!string.IsNullOrWhiteSpace(prefs.ScanFolder))
+        {
+            _folderBox.Text = prefs.ScanFolder;
+        }
+
+        if (prefs.Recursive is { } recursive)
+        {
+            _recursiveBox.Checked = recursive;
+        }
     }
 
     /// <summary>
@@ -910,10 +956,15 @@ public sealed class MainForm : Form
             .Split(new[] { ';', ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToList();
 
+        var includes = _includeBox.Text
+            .Split(new[] { ';', ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+
         return new InspectionSettings
         {
             MaxRunTimeSeconds = (double)_maxRunTime.Value,
             ExcludePatterns = excludes,
+            IncludePatterns = includes,
             VpxExecutablePath = _vpxExeBox.Text.Trim(),
             DofConfigPath = _dofConfigBox.Text.Trim(),
             PinupDatabasePath = _pinupDbBox.Text.Trim(),
@@ -976,9 +1027,33 @@ public sealed class MainForm : Form
         if (_engine is not null)
         {
             _ruleSelection.Save(CollectRuleSelection());
+            _uiPreferences.Save(CollectUiPreferences());
         }
 
         base.OnFormClosing(e);
+    }
+
+    /// <summary>
+    /// Captures the current Settings-panel choices so they can be persisted and
+    /// restored on the next run.
+    /// </summary>
+    private UiPreferences CollectUiPreferences()
+    {
+        InspectionSettings settings = BuildSettingsFromUi();
+
+        return new UiPreferences
+        {
+            ExcludePatterns = settings.ExcludePatterns.ToList(),
+            IncludePatterns = settings.IncludePatterns.ToList(),
+            VpxExecutablePath = settings.VpxExecutablePath,
+            DofConfigPath = settings.DofConfigPath,
+            PinupDatabasePath = settings.PinupDatabasePath,
+            CheckPinupVisibility = settings.CheckPinupVisibility,
+            MaxRunTimeSeconds = settings.MaxRunTimeSeconds,
+            SortModeIndex = _sortModeBox.SelectedIndex,
+            ScanFolder = _folderBox.Text.Trim(),
+            Recursive = _recursiveBox.Checked,
+        };
     }
 
     private void OnOpenRules(object? sender, LinkLabelLinkClickedEventArgs e)
@@ -1064,6 +1139,7 @@ public sealed class MainForm : Form
                 new ScanOptions
                 {
                     ExcludePatterns = settings.ExcludePatterns,
+                    IncludePatterns = settings.IncludePatterns,
                     HiddenFileNames = _hiddenTables.Load(),
                     Recursive = _recursiveBox.Checked,
                 }).ToList();
@@ -1095,6 +1171,7 @@ public sealed class MainForm : Form
         {
             SelectedRuleIds = selectedIds,
             ExcludePatterns = settings.ExcludePatterns,
+            IncludePatterns = settings.IncludePatterns,
             MaxRunTimeSeconds = settings.MaxRunTimeSeconds,
             MaxDegreeOfParallelism = settings.MaxDegreeOfParallelism,
             ExplicitFiles = mode == ScanMode.FlaggedOnly ? files : null,
@@ -1224,6 +1301,7 @@ public sealed class MainForm : Form
         _reloadRulesButton.Enabled = !scanning;
         _rulesTree.Enabled = !scanning;
         _excludeBox.Enabled = !scanning;
+        _includeBox.Enabled = !scanning;
         _maxRunTime.Enabled = !scanning;
         _vpxExeBox.Enabled = !scanning;
         _dofConfigBox.Enabled = !scanning;

@@ -24,6 +24,9 @@ public sealed class CollectionContext
     /// <summary>The active exclude globs (from settings/UI).</summary>
     public IReadOnlyList<string> ExcludePatterns { get; init; } = Array.Empty<string>();
 
+    /// <summary>The active include globs (from settings/UI); empty = include all.</summary>
+    public IReadOnlyList<string> IncludePatterns { get; init; } = Array.Empty<string>();
+
     /// <summary>
     /// Resolves the folder to operate on: the input when it's a directory, or its
     /// parent when a single file was scanned. Null when neither exists.
@@ -47,12 +50,14 @@ public sealed class CollectionContext
     public IReadOnlyList<string> EnumerateVpxFileNames(string folder, bool respectExcludePatterns)
     {
         Regex? exclude = respectExcludePatterns ? BuildExcludeRegex(ExcludePatterns) : null;
+        Regex? include = respectExcludePatterns ? BuildExcludeRegex(IncludePatterns) : null;
 
         return Directory
             .EnumerateFiles(folder, "*.vpx", SearchOption.TopDirectoryOnly)
             .Select(Path.GetFileName)
             .Where(n => !string.IsNullOrEmpty(n))
             .Select(n => n!)
+            .Where(n => include is null || include.IsMatch(n))
             .Where(n => exclude is null || !exclude.IsMatch(n))
             .ToList();
     }

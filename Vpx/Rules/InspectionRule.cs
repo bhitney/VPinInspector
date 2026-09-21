@@ -46,6 +46,16 @@ public sealed class InspectionSettings
     public List<string> ExcludePatterns { get; init; } = new();
 
     /// <summary>
+    /// Optional file-name globs a table must match to be scanned, e.g. [ "*VPW*" ].
+    /// Supports '*' and '?' wildcards, matched case-insensitively against the
+    /// table's file name (without directory). Empty = include everything. A file
+    /// that matches an include glob is still dropped if it also matches an
+    /// exclude glob.
+    /// </summary>
+    [JsonPropertyName("includePatterns")]
+    public List<string> IncludePatterns { get; init; } = new();
+
+    /// <summary>
     /// Full path to the Visual Pinball executable used to open a table when its
     /// name is clicked in the summary checklist. The table is launched as
     /// <c>vpinballx64.exe -edit "&lt;full table path&gt;"</c>. Empty = not configured.

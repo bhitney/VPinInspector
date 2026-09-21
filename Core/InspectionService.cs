@@ -18,6 +18,12 @@ public sealed class ScanOptions
     /// <summary>File-name globs to exclude from folder discovery.</summary>
     public IReadOnlyList<string> ExcludePatterns { get; init; } = Array.Empty<string>();
 
+    /// <summary>
+    /// File-name globs a table must match to be included in folder discovery.
+    /// Empty = include everything. Exclude patterns still take precedence.
+    /// </summary>
+    public IReadOnlyList<string> IncludePatterns { get; init; } = Array.Empty<string>();
+
     /// <summary>Optional wall-clock budget in seconds; zero/absent = no limit.</summary>
     public double MaxRunTimeSeconds { get; init; }
 
@@ -81,6 +87,7 @@ public sealed class InspectionService
         }
 
         Regex? exclude = BuildExcludeRegex(options.ExcludePatterns);
+        Regex? include = BuildExcludeRegex(options.IncludePatterns);
 
         if (Directory.Exists(inputPath))
         {
@@ -95,6 +102,7 @@ public sealed class InspectionService
                         ? SearchOption.AllDirectories
                         : SearchOption.TopDirectoryOnly)
                 .Where(f => extensions.Contains(Path.GetExtension(f)))
+                .Where(f => include is null || include.IsMatch(Path.GetFileName(f)))
                 .Where(f => exclude is null || !exclude.IsMatch(Path.GetFileName(f)))
                 .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
                 .ToList();
@@ -149,6 +157,7 @@ public sealed class InspectionService
                 {
                     SelectedRuleIds = options.SelectedRuleIds,
                     ExcludePatterns = options.ExcludePatterns,
+                    IncludePatterns = options.IncludePatterns,
                     MaxRunTimeSeconds = options.MaxRunTimeSeconds,
                     MaxDegreeOfParallelism = options.MaxDegreeOfParallelism,
                     ExplicitFiles = options.ExplicitFiles,
@@ -240,6 +249,7 @@ public sealed class InspectionService
                 Tables = contexts,
                 Platforms = _registry.Platforms,
                 ExcludePatterns = options.ExcludePatterns,
+                IncludePatterns = options.IncludePatterns,
             };
 
             foreach (ICollectionRule rule in _registry.CollectionRules)

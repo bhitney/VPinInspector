@@ -68,6 +68,7 @@ static int RunConsole(string[] args)
     var options = new ScanOptions
     {
         ExcludePatterns = engine.Settings.ExcludePatterns,
+        IncludePatterns = engine.Settings.IncludePatterns,
         MaxRunTimeSeconds = engine.Settings.MaxRunTimeSeconds,
         MaxDegreeOfParallelism = engine.Settings.MaxDegreeOfParallelism,
         HiddenFileNames = new HiddenTablesStore().Load(),
@@ -85,6 +86,10 @@ static int RunConsole(string[] args)
     if (engine.Settings.ExcludePatterns.Count > 0)
     {
         Console.WriteLine($"Excluding: {string.Join(", ", engine.Settings.ExcludePatterns)}");
+    }
+    if (engine.Settings.IncludePatterns.Count > 0)
+    {
+        Console.WriteLine($"Including: {string.Join(", ", engine.Settings.IncludePatterns)}");
     }
     if (engine.Settings.MaxRunTimeSeconds > 0)
     {
