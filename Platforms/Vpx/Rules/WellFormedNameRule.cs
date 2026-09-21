@@ -48,10 +48,16 @@ public sealed class WellFormedNameRule : ITableRule
             missing.Add("year");
         }
 
+        // A side-car VR ROOM file must share the exact name of its base table.
+        // If the base name is flagged here, the VR ROOM copy has to be renamed
+        // in lockstep, so surface it prominently.
+        bool hasVrRoomSibling = HasVrRoomSibling(context.Table.FilePath);
+        string prefix = hasVrRoomSibling ? "[VR ROOM FOUND!] " : string.Empty;
+
         yield return new Finding(
             Id,
             FindingSeverity.Warning,
-            $"'{context.Table.TableName}' isn't a well-formed table name " +
+            $"{prefix}'{context.Table.TableName}' isn't a well-formed table name " +
             $"(missing/unparseable: {string.Join(", ", missing)}). " +
             "Expected 'Name (Manufacturer Year)'.")
         {
@@ -61,7 +67,37 @@ public sealed class WellFormedNameRule : ITableRule
                 ["manufacturer"] = info.Manufacturer ?? string.Empty,
                 ["year"] = info.Year?.ToString() ?? string.Empty,
                 ["pup"] = info.IsPup ? "true" : "false",
+                ["vrRoomSibling"] = hasVrRoomSibling ? "true" : "false",
             },
         };
+    }
+
+    /// <summary>
+    /// Returns true when a "VR ROOM &lt;file&gt;" side-car exists next to the
+    /// table (e.g. "VR ROOM MyTable.vpx" beside "MyTable.vpx"). The VR ROOM copy
+    /// must always share the base table's name, so it has to be renamed too.
+    /// </summary>
+    private static bool HasVrRoomSibling(string? filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            return false;
+        }
+
+        string? directory = Path.GetDirectoryName(filePath);
+        string fileName = Path.GetFileName(filePath);
+        if (string.IsNullOrEmpty(fileName))
+        {
+            return false;
+        }
+
+        // Don't flag the VR ROOM file against itself.
+        if (fileName.StartsWith("VR ROOM ", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        string siblingPath = Path.Combine(directory ?? string.Empty, $"VR ROOM {fileName}");
+        return File.Exists(siblingPath);
     }
 }
