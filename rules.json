@@ -79,6 +79,16 @@
       "interval": ">40",
       "suggest": 40,
       "severity": "warning"
+    },
+    {
+      "id": "rolling",
+      "description": "Rolling update timer interval (user preference)",
+      "enabled": true,
+      "namePatterns": [ "RollingUpdate", "*rolling*" ],
+      "mustBeTimer": true,
+      "interval": "!=-1",
+      "suggest": -1,
+      "severity": "warning"
     }
   ]
 }

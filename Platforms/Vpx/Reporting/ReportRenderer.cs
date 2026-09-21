@@ -224,7 +224,10 @@ public static class ReportRenderer
                 FindingSeverity groupSeverity = group.Max(f => f.Severity);
                 IEnumerable<string> names = group.Select(f =>
                     f.Element is not null ? DescribeElementShort(f.Element) : f.Message);
-                Line(groupSeverity, $"      [ ] {group.Key}: {string.Join(", ", names)}");
+                // Mark auto-fixable rules with a '*' inside the checkbox so users
+                // can tell at a glance which findings the "fix" action addresses.
+                string ruleMarker = VpxCorrectionWriter.FixableRuleIds.Contains(group.Key) ? "[*]" : "[ ]";
+                Line(groupSeverity, $"      {ruleMarker} {group.Key}: {string.Join(", ", names)}");
             }
 
             // A "fix" action line closes out the table's issue list when the

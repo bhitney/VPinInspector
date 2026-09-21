@@ -1820,8 +1820,28 @@ public sealed class MainForm : Form
         string suffix;
         try
         {
-            int changed = VpxCorrectionWriter.ApplyFixes(report);
-            suffix = changed > 0 ? " DONE" : " (nothing to fix)";
+            VpxCorrectionWriter.FixResult result = VpxCorrectionWriter.ApplyFixes(report);
+            if (result.Attempted == 0)
+            {
+                suffix = " (nothing to fix)";
+            }
+            else if (result.AllApplied)
+            {
+                suffix = $" DONE ({result.Changed} applied)";
+            }
+            else if (result.Changed == 0)
+            {
+                // Every fix silently no-op'd: the target record(s) weren't found,
+                // so these findings will re-appear on the next scan.
+                suffix = $" NOT APPLIED — 0/{result.Attempted} written; " +
+                    $"unchanged: {string.Join(", ", result.UnchangedRuleIds)}. Will re-flag on rescan.";
+            }
+            else
+            {
+                // Partial success: some records were edited, others weren't found.
+                suffix = $" PARTIAL — {result.Changed}/{result.Attempted} applied; " +
+                    $"unchanged: {string.Join(", ", result.UnchangedRuleIds)}. Will re-flag on rescan.";
+            }
         }
         catch (Exception ex)
         {

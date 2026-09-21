@@ -84,9 +84,19 @@ public sealed class DeclarativeElementRule : ITableRule
                     message += timer.TimerEnabled ? " [ENABLED]" : " [DISABLED]";
                 }
 
+                // Surface the authored suggestion so downstream fixers can write
+                // exactly what the rule recommends instead of a hard-coded value.
+                IReadOnlyDictionary<string, string>? details = _source.Suggest is { } suggest
+                    ? new Dictionary<string, string>
+                    {
+                        ["suggest"] = suggest.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    }
+                    : null;
+
                 yield return new Finding(Id, _severity, message)
                 {
                     Element = element,
+                    Details = details,
                 };
             }
         }

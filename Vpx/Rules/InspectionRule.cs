@@ -407,8 +407,9 @@ public sealed class InspectionRule
 
     /// <summary>
     /// Optional recommended timer interval in milliseconds for elements that
-    /// match this rule. Purely advisory for now — reported as a proposed change,
-    /// never written back to the table.
+    /// match this rule. Surfaced on the finding's details and used by
+    /// auto-fixers (e.g. the slingshot fix) as the value written back to the
+    /// table when a fix is applied.
     /// </summary>
     [JsonPropertyName("suggest")]
     public int? Suggest { get; init; }

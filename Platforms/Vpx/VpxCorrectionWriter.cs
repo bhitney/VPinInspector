@@ -27,6 +27,7 @@ public static class VpxCorrectionWriter
         "ball-shadow",               // timer TMIN -> -1
         "graphics-update-timer",     // timer TMIN -> -1
         "slingshot",                 // surface timer TMIN -> 30
+        "rolling",                   // timer TMIN -> suggest (user preference, e.g. -1 or 10)
         "postitnote-alpha-mask",     // image ALTV -> 50
         "ball-shadow-alpha-mask",    // image ALTV -> 1
     };
@@ -36,29 +37,47 @@ public static class VpxCorrectionWriter
         !table.Failed && table.Findings.Any(f => FixableRuleIds.Contains(f.RuleId));
 
     /// <summary>
-    /// Applies every fixable finding for the given table in place. Returns the
-    /// number of records changed. A one-time <c>.bak</c> backup is created next
-    /// to the file if one doesn't already exist.
+    /// The outcome of an <see cref="ApplyFixes"/> run. <see cref="Attempted"/> is
+    /// the number of fixable findings the writer tried to correct; <see cref="Changed"/>
+    /// is how many actually resulted in a record edit. When <c>Changed &lt; Attempted</c>
+    /// some fixes silently no-op'd (the target BIFF record wasn't found), and the
+    /// affected findings will legitimately re-appear on the next scan.
+    /// <see cref="UnchangedRuleIds"/> lists those rule ids.
     /// </summary>
-    public static int ApplyFixes(TableReport table)
+    public readonly record struct FixResult(int Attempted, int Changed, IReadOnlyList<string> UnchangedRuleIds)
+    {
+        /// <summary>True when every attempted fix produced a record edit.</summary>
+        public bool AllApplied => Attempted > 0 && Changed == Attempted;
+
+        /// <summary>True when at least one attempted fix silently did nothing.</summary>
+        public bool HasPartialFailure => Changed < Attempted;
+    }
+
+    /// <summary>
+    /// Applies every fixable finding for the given table in place. Returns a
+    /// <see cref="FixResult"/> describing how many fixes were attempted vs.
+    /// actually applied. A one-time <c>.bak</c> backup is created next to the
+    /// file if one doesn't already exist.
+    /// </summary>
+    public static FixResult ApplyFixes(TableReport table)
     {
         if (table.Failed || string.IsNullOrEmpty(table.FilePath))
         {
-            return 0;
+            return new FixResult(0, 0, Array.Empty<string>());
         }
 
-        var edits = new List<(string StreamName, string Rule)>();
+        var edits = new List<(string StreamName, string Rule, int? Suggest)>();
         foreach (Finding finding in table.Findings)
         {
             if (FixableRuleIds.Contains(finding.RuleId) && finding.Element is not null)
             {
-                edits.Add((finding.Element.Id, finding.RuleId));
+                edits.Add((finding.Element.Id, finding.RuleId, TryGetSuggest(finding)));
             }
         }
 
         if (edits.Count == 0)
         {
-            return 0;
+            return new FixResult(0, 0, Array.Empty<string>());
         }
 
         string bak = table.FilePath + ".bak";
@@ -68,10 +87,11 @@ public static class VpxCorrectionWriter
         }
 
         int changed = 0;
+        var unchanged = new List<string>();
         using var root = RootStorage.Open(table.FilePath, FileMode.Open);
         Storage gameStg = root.OpenStorage("GameStg");
 
-        foreach ((string streamName, string rule) in edits)
+        foreach ((string streamName, string rule, int? suggest) in edits)
         {
             byte[] bytes;
             using (CfbStream s = gameStg.OpenStream(streamName))
@@ -80,8 +100,9 @@ public static class VpxCorrectionWriter
                 s.ReadExactly(bytes);
             }
 
-            if (!ApplyEdit(rule, bytes))
+            if (!ApplyEdit(rule, bytes, suggest))
             {
+                unchanged.Add(rule);
                 continue;
             }
 
@@ -95,14 +116,33 @@ public static class VpxCorrectionWriter
             changed++;
         }
 
-        return changed;
+        return new FixResult(edits.Count, changed, unchanged);
+    }
+
+    /// <summary>
+    /// Reads the optional integer <c>suggest</c> value a declarative rule may
+    /// attach to a finding (see <c>DeclarativeElementRule</c>). Returns null when
+    /// absent or unparsable.
+    /// </summary>
+    private static int? TryGetSuggest(Finding finding)
+    {
+        if (finding.Details is { } details &&
+            details.TryGetValue("suggest", out string? raw) &&
+            int.TryParse(raw, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int value))
+        {
+            return value;
+        }
+
+        return null;
     }
 
     /// <summary>
     /// Mutates <paramref name="bytes"/> for a single rule. Returns false when the
-    /// target record can't be found (nothing changed).
+    /// target record can't be found (nothing changed). <paramref name="suggest"/>
+    /// carries the rule's authored recommendation (rules.json <c>suggest</c>)
+    /// when available, so value-driven fixes write exactly what the rule advises.
     /// </summary>
-    private static bool ApplyEdit(string rule, byte[] bytes)
+    private static bool ApplyEdit(string rule, byte[] bytes, int? suggest)
     {
         switch (rule)
         {
@@ -126,7 +166,13 @@ public static class VpxCorrectionWriter
             case "graphics-update-timer":
                 return WriteInt32Record(bytes, "TMIN", -1);
             case "slingshot":
-                return WriteInt32Record(bytes, "TMIN", 30);
+                // Follow the rule's authored suggestion when present; fall back
+                // to 30 for older rule sets that don't carry a suggest value.
+                return WriteInt32Record(bytes, "TMIN", suggest ?? 30);
+            case "rolling":
+                // Fully user-configurable via the rule's suggest value (e.g. -1
+                // for per-frame or 10ms). Fall back to -1 when unspecified.
+                return WriteInt32Record(bytes, "TMIN", suggest ?? -1);
             case "postitnote-alpha-mask":
                 return WriteImageFloatTag(bytes, "ALTV"u8, 50f);
             case "ball-shadow-alpha-mask":
