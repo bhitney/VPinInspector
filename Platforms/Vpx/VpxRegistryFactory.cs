@@ -96,6 +96,9 @@ public static class VpxRegistryFactory
         // 16. Built-in table rule: flag B2SSetData 1nn, 2 calls introduced during manual fixes.
         registry.AddTableRule(new OpErrorRule());
 
+        // 17. Built-in table rule: table should have a sidecar .ini (legacy .pov removable).
+        registry.AddTableRule(new IniFileCheckRule());
+
         return registry;
     }
 }

@@ -226,7 +226,7 @@ public static class ReportRenderer
                     f.Element is not null ? DescribeElementShort(f.Element) : f.Message);
                 // Mark auto-fixable rules with a '*' inside the checkbox so users
                 // can tell at a glance which findings the "fix" action addresses.
-                string ruleMarker = VpxCorrectionWriter.FixableRuleIds.Contains(group.Key) ? "[*]" : "[ ]";
+                string ruleMarker = group.Any(VpxCorrectionWriter.IsFixable) ? "[*]" : "[ ]";
                 Line(groupSeverity, $"      {ruleMarker} {group.Key}: {string.Join(", ", names)}");
             }
 
@@ -241,6 +241,10 @@ public static class ReportRenderer
             // A "hide" action line lets the user suppress this table from future
             // scans. The UI turns the "<prefix><TableName>" span into a link.
             Line(table.Severity, $"      {HideLinkPrefix}{table.TableName}");
+
+            // A tiny spacer between checklist entries so each table stands out.
+            // The UI renders this at a reduced height; the console sees a blank.
+            lines.Add(RenderedLine.Spacer());
         }
 
         Info(string.Empty);

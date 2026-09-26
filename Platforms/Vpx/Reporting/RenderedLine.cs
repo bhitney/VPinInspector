@@ -12,4 +12,14 @@ public readonly record struct RenderedLine(FindingSeverity Severity, string Text
 {
     /// <summary>A neutral, non-colored line (headers, totals, blank lines).</summary>
     public static RenderedLine Info(string text) => new(FindingSeverity.Info, text);
+
+    /// <summary>
+    /// When true, this is a small vertical spacer between checklist entries. A UI
+    /// can render it at a reduced font size for a fractional-height gap; a console
+    /// treats it as an ordinary blank line.
+    /// </summary>
+    public bool IsSpacer { get; init; }
+
+    /// <summary>A tiny inter-entry spacer (blank text, rendered short in the UI).</summary>
+    public static RenderedLine Spacer() => new(FindingSeverity.Info, string.Empty) { IsSpacer = true };
 }

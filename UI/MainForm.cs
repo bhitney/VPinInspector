@@ -1539,6 +1539,12 @@ public sealed class MainForm : Form
 
         foreach (RenderedLine line in ReportRenderer.BuildSummaryLines(report, CurrentSort, _crossRefByFileName, CurrentFilter))
         {
+            if (line.IsSpacer)
+            {
+                AppendSummarySpacer();
+                continue;
+            }
+
             Color tagColor = line.Severity switch
             {
                 FindingSeverity.Error => DarkTheme.Error,
@@ -1550,6 +1556,26 @@ public sealed class MainForm : Form
         }
 
         _summaryBox.SelectionColor = defaultColor;
+    }
+
+    /// <summary>
+    /// Appends a short blank line used as a fractional-height gap between
+    /// checklist entries. The blank newline is written at a reduced font size so
+    /// the gap is roughly a third of a normal line rather than a full one.
+    /// </summary>
+    private void AppendSummarySpacer()
+    {
+        _summaryBox.SelectionStart = _summaryBox.TextLength;
+        _summaryBox.SelectionLength = 0;
+
+        Font normal = _summaryBox.Font;
+        var small = new Font(normal.FontFamily, normal.Size * 0.35f);
+        _summaryBox.SelectionFont = small;
+        _summaryBox.AppendText(Environment.NewLine);
+
+        _summaryBox.SelectionStart = _summaryBox.TextLength;
+        _summaryBox.SelectionLength = 0;
+        _summaryBox.SelectionFont = normal;
     }
 
     /// <summary>

@@ -30,11 +30,37 @@ public static class VpxCorrectionWriter
         "rolling",                   // timer TMIN -> suggest (user preference, e.g. -1 or 10)
         "postitnote-alpha-mask",     // image ALTV -> 50
         "ball-shadow-alpha-mask",    // image ALTV -> 1
+        "ini-file-check",            // delete the extraneous legacy .pov sidecar
     };
+
+    /// <summary>
+    /// Detail key a finding may carry naming a sidecar file that the fixer should
+    /// delete (e.g. an extraneous legacy <c>.pov</c>). When present, the fix is a
+    /// file deletion rather than an in-place BIFF edit.
+    /// </summary>
+    public const string DeleteFileDetailKey = "deleteFile";
+
+    /// <summary>True when the writer can auto-fix this specific finding.</summary>
+    public static bool IsFixable(Finding finding)
+    {
+        if (!FixableRuleIds.Contains(finding.RuleId))
+        {
+            return false;
+        }
+
+        // Sidecar-deletion fixes are identified by the deleteFile detail; other
+        // fixes need an element to target a BIFF record.
+        if (finding.Details is not null && finding.Details.ContainsKey(DeleteFileDetailKey))
+        {
+            return true;
+        }
+
+        return finding.Element is not null;
+    }
 
     /// <summary>True when the table has at least one finding this writer can fix.</summary>
     public static bool HasFixableFinding(TableReport table) =>
-        !table.Failed && table.Findings.Any(f => FixableRuleIds.Contains(f.RuleId));
+        !table.Failed && table.Findings.Any(IsFixable);
 
     /// <summary>
     /// The outcome of an <see cref="ApplyFixes"/> run. <see cref="Attempted"/> is
@@ -67,17 +93,55 @@ public static class VpxCorrectionWriter
         }
 
         var edits = new List<(string StreamName, string Rule, int? Suggest)>();
+        var deletions = new List<(string Path, string Rule)>();
         foreach (Finding finding in table.Findings)
         {
-            if (FixableRuleIds.Contains(finding.RuleId) && finding.Element is not null)
+            if (!FixableRuleIds.Contains(finding.RuleId))
+            {
+                continue;
+            }
+
+            if (finding.Details is { } details &&
+                details.TryGetValue(DeleteFileDetailKey, out string? deletePath) &&
+                !string.IsNullOrWhiteSpace(deletePath))
+            {
+                deletions.Add((deletePath, finding.RuleId));
+                continue;
+            }
+
+            if (finding.Element is not null)
             {
                 edits.Add((finding.Element.Id, finding.RuleId, TryGetSuggest(finding)));
             }
         }
 
-        if (edits.Count == 0)
+        if (edits.Count == 0 && deletions.Count == 0)
         {
             return new FixResult(0, 0, Array.Empty<string>());
+        }
+
+        int changed = 0;
+        var unchanged = new List<string>();
+
+        // File-deletion fixes (e.g. extraneous legacy .pov) need no .vpx edit.
+        foreach ((string path, string rule) in deletions)
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+                changed++;
+            }
+            else
+            {
+                unchanged.Add(rule);
+            }
+        }
+
+        int attempted = edits.Count + deletions.Count;
+
+        if (edits.Count == 0)
+        {
+            return new FixResult(attempted, changed, unchanged);
         }
 
         string bak = table.FilePath + ".bak";
@@ -86,8 +150,6 @@ public static class VpxCorrectionWriter
             File.Copy(table.FilePath, bak);
         }
 
-        int changed = 0;
-        var unchanged = new List<string>();
         using var root = RootStorage.Open(table.FilePath, FileMode.Open);
         Storage gameStg = root.OpenStorage("GameStg");
 
@@ -116,7 +178,7 @@ public static class VpxCorrectionWriter
             changed++;
         }
 
-        return new FixResult(edits.Count, changed, unchanged);
+        return new FixResult(attempted, changed, unchanged);
     }
 
     /// <summary>
