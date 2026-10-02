@@ -99,6 +99,9 @@ public static class VpxRegistryFactory
         // 17. Built-in table rule: table should have a sidecar .ini (legacy .pov removable).
         registry.AddTableRule(new IniFileCheckRule());
 
+        // 18. Opt-in table rule: image space usage + images with no reference found.
+        registry.AddTableRule(new ImageUsageRule(settings.ConfigurationChecks.ImageUsage));
+
         return registry;
     }
 }

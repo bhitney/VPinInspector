@@ -2,6 +2,7 @@
   "settings": {
     "maxRunTimeSeconds": 0,
     "excludePatterns": [ "VR ROOM*" ],
+    "minTableSizeMB": 0,
     "vpxExecutablePath": "C:\\vPinball\\VisualPinball\\vpinballx64.exe",
     "dofConfigPath": "C:\\DirectOutput\\Config\\directoutputconfig51.ini",
     "databasePath": "C:\\vPinball\\PinUPSystem\\PUPDatabase.db",
@@ -54,6 +55,12 @@
       "configurable-shadow": {
         "enabled": false,
         "patterns": [ "shadow", "Divertershadow_(Left|Right)" ]
+      },
+      "image-usage": {
+        "enabled": false,
+        "minSizeBytes": 51200,
+        "minTableSizeMB": 0,
+        "topConsumers": 10
       }
     }
   },

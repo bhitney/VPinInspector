@@ -34,6 +34,7 @@ public sealed class MainForm : Form
     private readonly TextBox _excludeBox;
     private readonly TextBox _includeBox;
     private readonly NumericUpDown _maxRunTime;
+    private readonly NumericUpDown _minTableSize;
     private readonly TextBox _vpxExeBox;
     private readonly TextBox _dofConfigBox;
     private readonly ComboBox _sortModeBox;
@@ -448,7 +449,7 @@ public sealed class MainForm : Form
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 2,
-            RowCount = 9,
+            RowCount = 10,
             Margin = new Padding(0),
             Padding = new Padding(0, 0, 0, 6),
         };
@@ -511,6 +512,27 @@ public sealed class MainForm : Form
             Margin = new Padding(3, 3, 3, 3),
         };
         _toolTip.SetToolTip(_maxRunTime, "Stop scanning after this many seconds (0 = no limit).");
+
+        var minSizeLabel = new Label
+        {
+            Text = "Min size (MB):",
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(3, 6, 6, 3),
+        };
+        _minTableSize = new NumericUpDown
+        {
+            Minimum = 0,
+            Maximum = 100000,
+            DecimalPlaces = 0,
+            Increment = 50,
+            Width = 90,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(3, 3, 3, 3),
+        };
+        _toolTip.SetToolTip(_minTableSize,
+            "Skip .vpx files smaller than this many MB before parsing (0 = scan all). " +
+            "A performance filter for large collections: raise it to focus on only the biggest tables.");
 
         var vpxExeLabel = new Label
         {
@@ -596,15 +618,17 @@ public sealed class MainForm : Form
         settingsPanel.Controls.Add(_includeBox, 1, 2);
         settingsPanel.Controls.Add(maxTimeLabel, 0, 3);
         settingsPanel.Controls.Add(_maxRunTime, 1, 3);
-        settingsPanel.Controls.Add(vpxExeLabel, 0, 4);
-        settingsPanel.Controls.Add(_vpxExeBox, 1, 4);
-        settingsPanel.Controls.Add(dofConfigLabel, 0, 5);
-        settingsPanel.Controls.Add(_dofConfigBox, 1, 5);
-        settingsPanel.Controls.Add(sortLabel, 0, 6);
-        settingsPanel.Controls.Add(_sortModeBox, 1, 6);
-        settingsPanel.Controls.Add(pinupDbLabel, 0, 7);
-        settingsPanel.Controls.Add(_pinupDbBox, 1, 7);
-        settingsPanel.Controls.Add(_checkPinupVisibilityBox, 1, 8);
+        settingsPanel.Controls.Add(minSizeLabel, 0, 4);
+        settingsPanel.Controls.Add(_minTableSize, 1, 4);
+        settingsPanel.Controls.Add(vpxExeLabel, 0, 5);
+        settingsPanel.Controls.Add(_vpxExeBox, 1, 5);
+        settingsPanel.Controls.Add(dofConfigLabel, 0, 6);
+        settingsPanel.Controls.Add(_dofConfigBox, 1, 6);
+        settingsPanel.Controls.Add(sortLabel, 0, 7);
+        settingsPanel.Controls.Add(_sortModeBox, 1, 7);
+        settingsPanel.Controls.Add(pinupDbLabel, 0, 8);
+        settingsPanel.Controls.Add(_pinupDbBox, 1, 8);
+        settingsPanel.Controls.Add(_checkPinupVisibilityBox, 1, 9);
 
         rulesPanel.Controls.Add(_rulesTree);
         rulesPanel.Controls.Add(settingsPanel);
@@ -929,6 +953,9 @@ public sealed class MainForm : Form
         decimal seconds = (decimal)(prefs.MaxRunTimeSeconds ?? settings.MaxRunTimeSeconds);
         _maxRunTime.Value = Math.Clamp(seconds, _maxRunTime.Minimum, _maxRunTime.Maximum);
 
+        decimal minMb = prefs.MinTableSizeMB ?? settings.MinTableSizeMB;
+        _minTableSize.Value = Math.Clamp(minMb, _minTableSize.Minimum, _minTableSize.Maximum);
+
         if (prefs.SortModeIndex is { } sortIndex &&
             sortIndex >= 0 && sortIndex < _sortModeBox.Items.Count)
         {
@@ -969,7 +996,8 @@ public sealed class MainForm : Form
             DofConfigPath = _dofConfigBox.Text.Trim(),
             PinupDatabasePath = _pinupDbBox.Text.Trim(),
             CheckPinupVisibility = _checkPinupVisibilityBox.Checked,
-            // Configuration checks aren't edited in the UI; carry file config through.
+            // Not edited in the UI; carry file config through.
+            MinTableSizeMB = (int)_minTableSize.Value,
             ConfigurationChecks = _engine?.Settings.ConfigurationChecks ?? new ConfigurationChecksSettings(),
         };
     }
@@ -1050,6 +1078,7 @@ public sealed class MainForm : Form
             PinupDatabasePath = settings.PinupDatabasePath,
             CheckPinupVisibility = settings.CheckPinupVisibility,
             MaxRunTimeSeconds = settings.MaxRunTimeSeconds,
+            MinTableSizeMB = settings.MinTableSizeMB,
             SortModeIndex = _sortModeBox.SelectedIndex,
             ScanFolder = _folderBox.Text.Trim(),
             Recursive = _recursiveBox.Checked,
@@ -1142,6 +1171,7 @@ public sealed class MainForm : Form
                     IncludePatterns = settings.IncludePatterns,
                     HiddenFileNames = _hiddenTables.Load(),
                     Recursive = _recursiveBox.Checked,
+                    MinTableSizeMB = settings.MinTableSizeMB,
                 }).ToList();
             if (files.Count == 0)
             {
@@ -1181,6 +1211,8 @@ public sealed class MainForm : Form
             HiddenFileNames = _hiddenTables.Load(),
             // Recursive subfolder discovery is opt-in via the UI checkbox.
             Recursive = _recursiveBox.Checked,
+            // Global performance filter: skip tables below the size floor entirely.
+            MinTableSizeMB = settings.MinTableSizeMB,
         };
 
         _cts = new CancellationTokenSource();
@@ -1303,6 +1335,7 @@ public sealed class MainForm : Form
         _excludeBox.Enabled = !scanning;
         _includeBox.Enabled = !scanning;
         _maxRunTime.Enabled = !scanning;
+        _minTableSize.Enabled = !scanning;
         _vpxExeBox.Enabled = !scanning;
         _dofConfigBox.Enabled = !scanning;
         _openRulesLink.Enabled = !scanning;

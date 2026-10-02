@@ -78,6 +78,29 @@ public sealed class VpxGameItem : TableElement, ITimerElement
     public const string ToyKey = "Toy";
 
     /// <summary>
+    /// Property-bag key for the set of image NAMEs this element references.
+    /// Stored as an <see cref="IReadOnlyList{String}"/> of image names (the
+    /// values of the element's image-slot BIFF records). Empty or absent when
+    /// the element references no image. Used by the image-usage rule to decide
+    /// which images are referenced by the object tree (VPX's "In Use" idea).
+    /// </summary>
+    public const string ImageReferencesKey = "ImageReferences";
+
+    /// <summary>
+    /// The BIFF tags whose string value is an image NAME, verified against real
+    /// tables (Silver Cup, The Shadow): <c>IMAG</c> is the common image slot
+    /// (surfaces, primitives, ramps, flippers, plungers, rubbers, targets,
+    /// flashers, dispreels); <c>SIMG</c> is a surface's side image; <c>IMG1</c>
+    /// is a light's image; <c>IMGW</c> is a ramp's wall image; <c>IMAB</c> is a
+    /// flasher's second image (Image B); <c>NRMA</c> is a primitive's normal map
+    /// image. Material (<c>MATR</c>/<c>TOMA</c>) and texture (<c>ATEX</c>/
+    /// <c>TEXC</c>) tags are deliberately excluded: they are not image-name
+    /// references.
+    /// </summary>
+    private static readonly string[] ImageSlotTags =
+        { "IMAG", "SIMG", "IMG1", "IMGW", "IMAB", "NRMA" };
+
+    /// <summary>
     /// Ported from GameItem.Parse: reads NAME/TMON/TMIN from a GameItem stream.
     /// </summary>
     public static VpxGameItem Parse(string streamName, byte[] bytes)
@@ -91,6 +114,7 @@ public sealed class VpxGameItem : TableElement, ITimerElement
         bool? staticRendering = null;
         bool? reflectionEnabled = null;
         bool? toy = null;
+        List<string>? imageReferences = null;
 
         foreach (var record in records)
         {
@@ -117,6 +141,18 @@ public sealed class VpxGameItem : TableElement, ITimerElement
                 case "ISTO":
                     toy = record.AsBool();
                     break;
+                default:
+                    if (Array.IndexOf(ImageSlotTags, record.Tag) >= 0)
+                    {
+                        // Image-slot values are single-byte (Latin1) strings,
+                        // like image NAMEs - not UTF-16 like a GameItem NAME.
+                        string imageName = record.AsLatin1String();
+                        if (!string.IsNullOrEmpty(imageName))
+                        {
+                            (imageReferences ??= new List<string>()).Add(imageName);
+                        }
+                    }
+                    break;
             }
         }
 
@@ -136,6 +172,10 @@ public sealed class VpxGameItem : TableElement, ITimerElement
         if (toy is not null)
         {
             properties[ToyKey] = toy.Value;
+        }
+        if (imageReferences is not null)
+        {
+            properties[ImageReferencesKey] = (IReadOnlyList<string>)imageReferences;
         }
 
         return new VpxGameItem

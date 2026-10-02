@@ -207,6 +207,7 @@ Examples: `">=10"`, `"<10"`, `">40"`, `"==135"`, `"100"`.
 "settings": {
   "maxRunTimeSeconds": 0,           // 0 = no limit; >0 stops the scan after N seconds.
   "excludePatterns": [ "VR ROOM*" ],// file-name globs to skip (case-insensitive).
+  "minTableSizeMB": 0,              // 0 = scan all; >0 skips smaller .vpx files before parsing.
   "databasePath": "C:\\vPinball\\PinUPSystem\\PUPDatabase.db", // shared by all PinUP checks.
   "checkPinupVisibility": false,    // annotate flagged tables with their PinUP visibility.
   "configurationChecks": {          // collection-scope checks (see below).
@@ -223,6 +224,14 @@ Examples: `">=10"`, `"<10"`, `">40"`, `"==135"`, `"100"`.
 
 `maxRunTimeSeconds` and `excludePatterns` can also be edited live in the GUI's
 **Settings** panel (overrides the file for that run without saving).
+
+`minTableSizeMB` is a **global performance filter**: when greater than zero, any
+`.vpx` smaller than this is dropped during folder discovery, so it is never
+parsed or evaluated by any rule. In a large collection where most tables are
+small, set it high (e.g. `300`) to focus a scan on only the biggest tables, then
+lower it to work down. This is distinct from the per-rule
+`image-usage.minTableSizeMB`, which only gates that one rule (the table is still
+parsed for other rules); the global filter skips the parse entirely.
 
 `databasePath` is the single, shared path to the PinUP Popper `PUPDatabase.db`
 used by every PinUP check (both quick and deep) and by the visibility lookup.
@@ -345,6 +354,47 @@ Reports three buckets:
 - **[WARN]** *Newer VPS version available* — online is newer than local (most actionable).
 - **[INFO]** *Local version is newer than VPS* — local is ahead.
 - **[INFO]** *Version differs (can't tell which is newer)* — different but unorderable.
+
+### `image-usage`
+
+> Unlike the checks above, this is a **table-scope** rule (it inspects inside each
+> `.vpx`, not the collection). Its settings just live under
+> `configurationChecks` for consistency, the same way `configurable-shadow` does.
+> It is **opt-in** (`enabled: false` by default).
+
+Flags embedded images with **no detectable reference** and reports their combined
+reclaimable size. "Referenced" is decided in two layers so a script-driven image
+is never falsely flagged:
+
+- **Layer 0 (object tree)** — the image NAME appears in an element's image slot
+  (BIFF tags `IMAG`, `SIMG`, `IMG1`, `IMGW`, `IMAB`, `NRMA`). This reproduces the
+  VPX editor's "In Use" checkbox, which is computed at runtime and not stored in
+  the file.
+- **Layer 1 (script)** — the image NAME is referenced in the table script, matched
+  conservatively (whole-word for identifier-safe names, substring otherwise, plus a
+  prefix-family guard that catches names assembled at runtime, e.g.
+  `EVAL("postit" & n)`).
+
+| Field | Meaning |
+|---|---|
+| `enabled` | Whether the rule runs. Defaults to `false`. |
+| `minSizeBytes` | Minimum stored size for an image to be reported as a candidate. Smaller images (glyphs, color swatches) are ignored entirely. Defaults to `51200` (50 KB). |
+| `minTableSizeMB` | Minimum `.vpx` file size (MB) for the rule to evaluate a table at all. Tables below this are skipped entirely, so a scan can focus on the biggest tables first (e.g. `400` for only the whales, then lower it). Defaults to `0` (evaluate every table). |
+| `topConsumers` | How many likely-unused image names to list in the summary before collapsing the rest into "+N more". Defaults to `10`; `0` lists all. |
+
+Reports, **only when at least one candidate is found**, an **[INFO]** summary of the
+likely-unused images and their combined size — e.g. *"Likely unused images (1.85
+MB): image1.png, image2.png"* — plus a **[WARN]** per image. The summary and
+warnings cover the same candidates (unreferenced and above `minSizeBytes`); nothing
+is reported for a table with no candidates. The findings are advisory — an
+unreferenced image may still be loaded dynamically, so they read "review before
+removing", never "delete".
+
+> Known limitation: table-level images stored in the `GameData` stream (e.g. the
+> playfield, backdrop, or environment/ball images) are not yet parsed as object-tree
+> references, so a few may surface as "no reference found". Treat the list as a
+> review aid, not a removal list.
+
 
 ### Adding a configuration check (code task)
 

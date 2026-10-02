@@ -56,6 +56,17 @@ public sealed class InspectionSettings
     public List<string> IncludePatterns { get; init; } = new();
 
     /// <summary>
+    /// Optional global minimum .vpx file size, in megabytes. When greater than
+    /// zero, tables smaller than this are dropped during folder discovery, so
+    /// they are never parsed or evaluated. This is a performance filter for large
+    /// collections: set it high (e.g. 300) to focus a scan on only the biggest
+    /// tables, then lower it. Zero (default) = no size filter. Applies across all
+    /// rules, unlike the per-rule image-usage <c>minTableSizeMB</c>.
+    /// </summary>
+    [JsonPropertyName("minTableSizeMB")]
+    public int MinTableSizeMB { get; init; }
+
+    /// <summary>
     /// Full path to the Visual Pinball executable used to open a table when its
     /// name is clicked in the summary checklist. The table is launched as
     /// <c>vpinballx64.exe -edit "&lt;full table path&gt;"</c>. Empty = not configured.
@@ -133,7 +144,15 @@ public sealed class ConfigurationChecksSettings
     /// </summary>
     [JsonPropertyName("configurable-shadow")]
     public ConfigurableShadowSettings ConfigurableShadow { get; init; } = new();
+
+    /// <summary>Settings for the image-usage / space check.</summary>
+    [JsonPropertyName("image-usage")]
+    public ImageUsageSettings ImageUsage { get; init; } = new();
 }
+
+/// <summary>
+/// Common settings shared by all configuration checks.
+/// </summary>
 
 /// <summary>
 /// Common settings shared by all configuration checks.
@@ -365,6 +384,39 @@ public sealed class ConfigurableShadowSettings : ConfigurationCheckSettings
     /// </summary>
     [JsonPropertyName("patterns")]
     public List<string> Patterns { get; init; } = new() { "shadow" };
+}
+
+/// <summary>
+/// Settings for the image-usage check: reports how much space embedded images
+/// consume and flags images with no detectable reference (object-tree slot or
+/// script name). The size threshold suppresses tiny images (glyphs, color
+/// swatches) from the "unused" findings; it never affects the space totals.
+/// </summary>
+public sealed class ImageUsageSettings : ConfigurationCheckSettings
+{
+    /// <summary>
+    /// Minimum stored size, in bytes, for an image to be reported as unused.
+    /// Images smaller than this are omitted from the unused findings (but still
+    /// counted in the space summary). Defaults to 51200 (50 KB).
+    /// </summary>
+    [JsonPropertyName("minSizeBytes")]
+    public long MinSizeBytes { get; init; } = 51200;
+
+    /// <summary>
+    /// Minimum .vpx file size, in megabytes, for the rule to evaluate a table
+    /// at all. Tables smaller than this are skipped entirely (no findings), so
+    /// a scan can be focused on the largest tables first (e.g. 400 to see only
+    /// the whales, then lower it). Defaults to 0 (evaluate every table).
+    /// </summary>
+    [JsonPropertyName("minTableSizeMB")]
+    public int MinTableSizeMB { get; init; }
+
+    /// <summary>
+    /// How many likely-unused image names to list in the Info summary before
+    /// collapsing the rest into "+N more". Defaults to 10. Set to 0 to list all.
+    /// </summary>
+    [JsonPropertyName("topConsumers")]
+    public int TopConsumers { get; init; } = 10;
 }
 
 /// <summary>

@@ -28,6 +28,13 @@ public sealed class ScanOptions
     public double MaxRunTimeSeconds { get; init; }
 
     /// <summary>
+    /// Optional global minimum .vpx file size in megabytes. When greater than
+    /// zero, files smaller than this are dropped during discovery (never parsed).
+    /// Zero/absent = no size filter.
+    /// </summary>
+    public int MinTableSizeMB { get; init; }
+
+    /// <summary>
     /// Maximum number of tables parsed concurrently. Zero or negative = use
     /// <see cref="Environment.ProcessorCount"/>; 1 = single-threaded. The report
     /// order is independent of this value.
@@ -104,6 +111,7 @@ public sealed class InspectionService
                 .Where(f => extensions.Contains(Path.GetExtension(f)))
                 .Where(f => include is null || include.IsMatch(Path.GetFileName(f)))
                 .Where(f => exclude is null || !exclude.IsMatch(Path.GetFileName(f)))
+                .Where(f => PassesMinSize(f, options.MinTableSizeMB))
                 .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
@@ -129,6 +137,28 @@ public sealed class InspectionService
         return files
             .Where(f => !hiddenFileNames.Contains(Path.GetFileName(f)))
             .ToList();
+    }
+
+    /// <summary>
+    /// True when the file is at least <paramref name="minMb"/> megabytes, or when
+    /// no size filter is set (<paramref name="minMb"/> &lt;= 0). A file whose size
+    /// can't be read passes, so a transient I/O issue never silently hides it.
+    /// </summary>
+    private static bool PassesMinSize(string path, int minMb)
+    {
+        if (minMb <= 0)
+        {
+            return true;
+        }
+
+        try
+        {
+            return new FileInfo(path).Length >= (long)minMb * 1024 * 1024;
+        }
+        catch
+        {
+            return true;
+        }
     }
 
     /// <summary>
@@ -164,6 +194,7 @@ public sealed class InspectionService
                     RunCollectionRules = options.RunCollectionRules,
                     HiddenFileNames = null,
                     Recursive = options.Recursive,
+                    MinTableSizeMB = options.MinTableSizeMB,
                 });
             skippedTableCount = unfiltered.Count - files.Count;
         }

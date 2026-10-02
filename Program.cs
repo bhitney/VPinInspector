@@ -71,6 +71,7 @@ static int RunConsole(string[] args)
         IncludePatterns = engine.Settings.IncludePatterns,
         MaxRunTimeSeconds = engine.Settings.MaxRunTimeSeconds,
         MaxDegreeOfParallelism = engine.Settings.MaxDegreeOfParallelism,
+        MinTableSizeMB = engine.Settings.MinTableSizeMB,
         HiddenFileNames = new HiddenTablesStore().Load(),
     };
 

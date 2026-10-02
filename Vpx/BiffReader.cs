@@ -38,6 +38,23 @@ public sealed class BiffRecord
         byteCount = Math.Clamp(byteCount, 0, Data.Length - 4);
         return Encoding.Unicode.GetString(Data, 4, byteCount);
     }
+
+    /// <summary>
+    /// Reads the payload as a VPX single-byte (Latin1) string. Some records,
+    /// notably image-slot references (IMAG/SIMG/...), store a leading Int32
+    /// byte-count followed by single-byte characters rather than UTF-16.
+    /// </summary>
+    public string AsLatin1String()
+    {
+        if (Data.Length < 4)
+        {
+            return string.Empty;
+        }
+
+        int byteCount = BitConverter.ToInt32(Data, 0);
+        byteCount = Math.Clamp(byteCount, 0, Data.Length - 4);
+        return Encoding.Latin1.GetString(Data, 4, byteCount);
+    }
 }
 
 /// <summary>

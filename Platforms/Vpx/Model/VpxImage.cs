@@ -19,21 +19,55 @@ public sealed class VpxImage : TableElement
     public const string AlphaMaskKey = "AlphaMask";
 
     /// <summary>
-    /// Reads NAME and the alpha-mask value (ALTV) from an Image BIFF stream.
-    /// Image streams don't lay out cleanly as a single BIFF record list: the
-    /// embedded bitmap (a nested JPEG substream whose raw bytes follow a SIZE
-    /// record) breaks a naive sequential walk, and ALTV lives AFTER that blob.
-    /// So we locate the tags directly, the way the script's CODE record is found.
+    /// Property-bag key for the image stream's stored byte length (the whole
+    /// GameStg "Image*" stream, which is dominated by the embedded bitmap blob).
+    /// Stored as an <see cref="int"/>. This is the number used for space
+    /// reporting and the "unused image" size threshold.
+    /// </summary>
+    public const string SizeBytesKey = "SizeBytes";
+
+    /// <summary>
+    /// Property-bag key for the image's pixel width (BIFF <c>WDTH</c>). Stored
+    /// as an <see cref="int"/>. Absent when the record isn't present.
+    /// </summary>
+    public const string WidthKey = "Width";
+
+    /// <summary>
+    /// Property-bag key for the image's pixel height (BIFF <c>HGHT</c>). Stored
+    /// as an <see cref="int"/>. Absent when the record isn't present.
+    /// </summary>
+    public const string HeightKey = "Height";
+
+    /// <summary>
+    /// Reads NAME, the alpha-mask value (ALTV), the stored byte size and the
+    /// pixel dimensions (WDTH/HGHT) from an Image BIFF stream. Image streams
+    /// don't lay out cleanly as a single BIFF record list: the embedded bitmap
+    /// (a nested JPEG substream whose raw bytes follow a SIZE record) breaks a
+    /// naive sequential walk, and ALTV lives AFTER that blob. So we locate the
+    /// tags directly, the way the script's CODE record is found.
     /// </summary>
     public static VpxImage Parse(string streamName, byte[] bytes)
     {
         string name = FindNameTag(bytes) ?? string.Empty;
         float? alphaMask = FindFloatTag(bytes, "ALTV"u8);
+        int? width = FindInt32Tag(bytes, "WDTH"u8);
+        int? height = FindInt32Tag(bytes, "HGHT"u8);
 
-        var properties = new Dictionary<string, object?>();
+        var properties = new Dictionary<string, object?>
+        {
+            [SizeBytesKey] = bytes.Length,
+        };
         if (alphaMask is not null)
         {
             properties[AlphaMaskKey] = alphaMask.Value;
+        }
+        if (width is not null)
+        {
+            properties[WidthKey] = width.Value;
+        }
+        if (height is not null)
+        {
+            properties[HeightKey] = height.Value;
         }
 
         return new VpxImage
@@ -81,6 +115,21 @@ public sealed class VpxImage : TableElement
         }
 
         return BitConverter.ToSingle(bytes, tagPos + 4);
+    }
+
+    /// <summary>
+    /// Finds a 4-char tag and reads the 4 bytes after it as a little-endian
+    /// Int32. Returns null when the tag isn't present.
+    /// </summary>
+    private static int? FindInt32Tag(byte[] bytes, ReadOnlySpan<byte> tag)
+    {
+        int tagPos = IndexOfTag(bytes, tag, 0);
+        if (tagPos < 0 || tagPos + 8 > bytes.Length)
+        {
+            return null;
+        }
+
+        return BitConverter.ToInt32(bytes, tagPos + 4);
     }
 
     private static int IndexOfTag(byte[] bytes, ReadOnlySpan<byte> tag, int start)
