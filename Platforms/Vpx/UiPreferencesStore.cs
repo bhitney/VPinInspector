@@ -17,6 +17,7 @@ public sealed class UiPreferences
     public bool? CheckPinupVisibility { get; set; }
     public double? MaxRunTimeSeconds { get; set; }
     public int? MinTableSizeMB { get; set; }
+    public int? MaxTableAgeDays { get; set; }
     public int? SortModeIndex { get; set; }
     public string? ScanFolder { get; set; }
     public bool? Recursive { get; set; }

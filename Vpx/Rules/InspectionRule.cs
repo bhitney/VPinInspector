@@ -67,6 +67,16 @@ public sealed class InspectionSettings
     public int MinTableSizeMB { get; init; }
 
     /// <summary>
+    /// Optional "last modified within" window, in days. When greater than zero,
+    /// tables whose last-write time is older than this many days are dropped
+    /// during folder discovery, so they are never parsed or evaluated. Useful for
+    /// focusing a scan on newly added/changed tables. Zero (default) = no age
+    /// filter.
+    /// </summary>
+    [JsonPropertyName("maxTableAgeDays")]
+    public int MaxTableAgeDays { get; init; }
+
+    /// <summary>
     /// Full path to the Visual Pinball executable used to open a table when its
     /// name is clicked in the summary checklist. The table is launched as
     /// <c>vpinballx64.exe -edit "&lt;full table path&gt;"</c>. Empty = not configured.

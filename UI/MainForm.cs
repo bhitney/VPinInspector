@@ -20,6 +20,20 @@ namespace VPin.Inspector.UI;
 [SupportedOSPlatform("windows")]
 public sealed class MainForm : Form
 {
+    /// <summary>
+    /// "Last modified within" filter choices, mapping a display label to a day
+    /// window. A value of 0 means "All" (no age filter).
+    /// </summary>
+    private static readonly (string Label, int Days)[] MaxAgeOptions =
+    {
+        ("All", 0),
+        ("1 day", 1),
+        ("1 week", 7),
+        ("1 month", 30),
+        ("1 year", 365),
+        ("2 years", 730),
+    };
+
     private readonly TextBox _folderBox;
     private readonly Button _browseButton;
     private readonly CheckBox _recursiveBox;
@@ -31,10 +45,12 @@ public sealed class MainForm : Form
     private readonly RichTextBox _summaryBox;
     private readonly TreeView _rulesTree;
     private readonly LinkLabel _openRulesLink;
+    private readonly LinkLabel _openHiddenLink;
     private readonly TextBox _excludeBox;
     private readonly TextBox _includeBox;
     private readonly NumericUpDown _maxRunTime;
     private readonly NumericUpDown _minTableSize;
+    private readonly ComboBox _maxAgeBox;
     private readonly TextBox _vpxExeBox;
     private readonly TextBox _dofConfigBox;
     private readonly ComboBox _sortModeBox;
@@ -85,6 +101,16 @@ public sealed class MainForm : Form
     // table report to add to hidden_tables.json when clicked.
     private readonly Dictionary<string, TableReport> _tableHideReports =
         new(StringComparer.Ordinal);
+
+    // Maps an "unhide" action link's full text (appended after a table has been
+    // hidden in-session) to the table report to restore when clicked. Lets the
+    // user undo an accidental hide without rescanning.
+    private readonly Dictionary<string, TableReport> _tableUnhideReports =
+        new(StringComparer.Ordinal);
+
+    // Link prefix for the in-session "undo hide" action appended after a table
+    // is hidden. Not emitted by ReportRenderer; it only exists after a click.
+    private const string UnhideLinkPrefix = "[unhide table] ";
 
     // Manages hidden_tables.json (next to the executable) so hidden tables are
     // skipped on future scans.
@@ -439,7 +465,16 @@ public sealed class MainForm : Form
             Dock = DockStyle.Right,
         };
         _openRulesLink.LinkClicked += OnOpenRules;
+        _openHiddenLink = new LinkLabel
+        {
+            Text = "Edit hidden",
+            AutoSize = true,
+            Dock = DockStyle.Right,
+            Margin = new Padding(0, 0, 12, 0),
+        };
+        _openHiddenLink.LinkClicked += OnOpenHidden;
         rulesHeader.Controls.Add(_openRulesLink);
+        rulesHeader.Controls.Add(_openHiddenLink);
         rulesHeader.Controls.Add(rulesLabel);
 
         // Settings panel above the rules tree: exclude globs + max run time.
@@ -449,7 +484,7 @@ public sealed class MainForm : Form
             AutoSize = true,
             AutoSizeMode = AutoSizeMode.GrowAndShrink,
             ColumnCount = 2,
-            RowCount = 10,
+            RowCount = 11,
             Margin = new Padding(0),
             Padding = new Padding(0, 0, 0, 6),
         };
@@ -533,6 +568,26 @@ public sealed class MainForm : Form
         _toolTip.SetToolTip(_minTableSize,
             "Skip .vpx files smaller than this many MB before parsing (0 = scan all). " +
             "A performance filter for large collections: raise it to focus on only the biggest tables.");
+
+        var maxAgeLabel = new Label
+        {
+            Text = "Last modified:",
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(3, 6, 6, 3),
+        };
+        _maxAgeBox = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Width = 120,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(3, 3, 3, 3),
+        };
+        _maxAgeBox.Items.AddRange(MaxAgeOptions.Select(o => (object)o.Label).ToArray());
+        _maxAgeBox.SelectedIndex = 0;
+        _toolTip.SetToolTip(_maxAgeBox,
+            "Only scan tables modified within this window (based on file last-write time). " +
+            "Pick a recent window to skip tables you've already examined; 'All' scans every table.");
 
         var vpxExeLabel = new Label
         {
@@ -620,15 +675,17 @@ public sealed class MainForm : Form
         settingsPanel.Controls.Add(_maxRunTime, 1, 3);
         settingsPanel.Controls.Add(minSizeLabel, 0, 4);
         settingsPanel.Controls.Add(_minTableSize, 1, 4);
-        settingsPanel.Controls.Add(vpxExeLabel, 0, 5);
-        settingsPanel.Controls.Add(_vpxExeBox, 1, 5);
-        settingsPanel.Controls.Add(dofConfigLabel, 0, 6);
-        settingsPanel.Controls.Add(_dofConfigBox, 1, 6);
-        settingsPanel.Controls.Add(sortLabel, 0, 7);
-        settingsPanel.Controls.Add(_sortModeBox, 1, 7);
-        settingsPanel.Controls.Add(pinupDbLabel, 0, 8);
-        settingsPanel.Controls.Add(_pinupDbBox, 1, 8);
-        settingsPanel.Controls.Add(_checkPinupVisibilityBox, 1, 9);
+        settingsPanel.Controls.Add(maxAgeLabel, 0, 5);
+        settingsPanel.Controls.Add(_maxAgeBox, 1, 5);
+        settingsPanel.Controls.Add(vpxExeLabel, 0, 6);
+        settingsPanel.Controls.Add(_vpxExeBox, 1, 6);
+        settingsPanel.Controls.Add(dofConfigLabel, 0, 7);
+        settingsPanel.Controls.Add(_dofConfigBox, 1, 7);
+        settingsPanel.Controls.Add(sortLabel, 0, 8);
+        settingsPanel.Controls.Add(_sortModeBox, 1, 8);
+        settingsPanel.Controls.Add(pinupDbLabel, 0, 9);
+        settingsPanel.Controls.Add(_pinupDbBox, 1, 9);
+        settingsPanel.Controls.Add(_checkPinupVisibilityBox, 1, 10);
 
         rulesPanel.Controls.Add(_rulesTree);
         rulesPanel.Controls.Add(settingsPanel);
@@ -956,6 +1013,8 @@ public sealed class MainForm : Form
         decimal minMb = prefs.MinTableSizeMB ?? settings.MinTableSizeMB;
         _minTableSize.Value = Math.Clamp(minMb, _minTableSize.Minimum, _minTableSize.Maximum);
 
+        _maxAgeBox.SelectedIndex = MaxAgeDaysToIndex(prefs.MaxTableAgeDays ?? settings.MaxTableAgeDays);
+
         if (prefs.SortModeIndex is { } sortIndex &&
             sortIndex >= 0 && sortIndex < _sortModeBox.Items.Count)
         {
@@ -998,6 +1057,7 @@ public sealed class MainForm : Form
             CheckPinupVisibility = _checkPinupVisibilityBox.Checked,
             // Not edited in the UI; carry file config through.
             MinTableSizeMB = (int)_minTableSize.Value,
+            MaxTableAgeDays = SelectedMaxAgeDays,
             ConfigurationChecks = _engine?.Settings.ConfigurationChecks ?? new ConfigurationChecksSettings(),
         };
     }
@@ -1065,6 +1125,26 @@ public sealed class MainForm : Form
     /// Captures the current Settings-panel choices so they can be persisted and
     /// restored on the next run.
     /// </summary>
+    /// <summary>The "last modified within" window in days for the current combo selection (0 = All).</summary>
+    private int SelectedMaxAgeDays =>
+        _maxAgeBox.SelectedIndex >= 0 && _maxAgeBox.SelectedIndex < MaxAgeOptions.Length
+            ? MaxAgeOptions[_maxAgeBox.SelectedIndex].Days
+            : 0;
+
+    /// <summary>Maps a saved day window to the closest matching combo index (0 = All).</summary>
+    private static int MaxAgeDaysToIndex(int days)
+    {
+        for (int i = 0; i < MaxAgeOptions.Length; i++)
+        {
+            if (MaxAgeOptions[i].Days == days)
+            {
+                return i;
+            }
+        }
+
+        return 0;
+    }
+
     private UiPreferences CollectUiPreferences()
     {
         InspectionSettings settings = BuildSettingsFromUi();
@@ -1079,6 +1159,7 @@ public sealed class MainForm : Form
             CheckPinupVisibility = settings.CheckPinupVisibility,
             MaxRunTimeSeconds = settings.MaxRunTimeSeconds,
             MinTableSizeMB = settings.MinTableSizeMB,
+            MaxTableAgeDays = settings.MaxTableAgeDays,
             SortModeIndex = _sortModeBox.SelectedIndex,
             ScanFolder = _folderBox.Text.Trim(),
             Recursive = _recursiveBox.Checked,
@@ -1105,6 +1186,12 @@ public sealed class MainForm : Form
             MessageBox.Show(this, $"Could not open rules file: {ex.Message}", "VPin Inspector",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    private void OnOpenHidden(object? sender, LinkLabelLinkClickedEventArgs e)
+    {
+        using var dialog = new HiddenTablesDialog(_hiddenTables);
+        dialog.ShowDialog(this);
     }
 
     private void OnReloadRules(object? sender, EventArgs e)
@@ -1172,10 +1259,22 @@ public sealed class MainForm : Form
                     HiddenFileNames = _hiddenTables.Load(),
                     Recursive = _recursiveBox.Checked,
                     MinTableSizeMB = settings.MinTableSizeMB,
+                    MaxTableAgeDays = settings.MaxTableAgeDays,
                 }).ToList();
             if (files.Count == 0)
             {
-                MessageBox.Show(this, $"No tables found at '{scanInput}'.", "VPin Inspector",
+                // Count tables without the user's filters so we can tell apart
+                // "folder is empty" from "filters excluded everything".
+                int totalTables = service.ResolveFiles(
+                    scanInput,
+                    new ScanOptions { Recursive = _recursiveBox.Checked }).Count;
+
+                string message = totalTables == 0
+                    ? $"No tables found at '{scanInput}'."
+                    : $"No matching tables at '{scanInput}'.{Environment.NewLine}" +
+                      $"{totalTables} table(s), 0 match the current filters.";
+
+                MessageBox.Show(this, message, "VPin Inspector",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
@@ -1213,6 +1312,8 @@ public sealed class MainForm : Form
             Recursive = _recursiveBox.Checked,
             // Global performance filter: skip tables below the size floor entirely.
             MinTableSizeMB = settings.MinTableSizeMB,
+            // Age filter: skip tables not modified within the chosen window.
+            MaxTableAgeDays = settings.MaxTableAgeDays,
         };
 
         _cts = new CancellationTokenSource();
@@ -1336,9 +1437,11 @@ public sealed class MainForm : Form
         _includeBox.Enabled = !scanning;
         _maxRunTime.Enabled = !scanning;
         _minTableSize.Enabled = !scanning;
+        _maxAgeBox.Enabled = !scanning;
         _vpxExeBox.Enabled = !scanning;
         _dofConfigBox.Enabled = !scanning;
         _openRulesLink.Enabled = !scanning;
+        _openHiddenLink.Enabled = !scanning;
         _sortModeBox.Enabled = !scanning;
         _pinupDbBox.Enabled = !scanning;
         _checkPinupVisibilityBox.Enabled = !scanning;
@@ -1418,6 +1521,7 @@ public sealed class MainForm : Form
         RegisterTableLinks(results);
         RegisterFixLinks(results);
         RegisterHideLinks(results);
+        _tableUnhideReports.Clear();
         WriteSummary(report);
         LinkifyTableNames();
         LinkifyFixMarkers();
@@ -1917,6 +2021,12 @@ public sealed class MainForm : Form
             return;
         }
 
+        if (e.LinkText is not null && _tableUnhideReports.TryGetValue(e.LinkText, out TableReport? unhideReport))
+        {
+            UnhideTableFromLink(e.LinkText, unhideReport);
+            return;
+        }
+
         if (e.LinkText is null || !_tableLinkPaths.TryGetValue(e.LinkText, out string? tablePath))
         {
             return;
@@ -2056,6 +2166,11 @@ public sealed class MainForm : Form
         // Prevent re-clicking the same link and stop it re-firing while we edit.
         _tableHideReports.Remove(linkText);
 
+        // Register an in-session "undo" so an accidental hide can be reversed
+        // without rescanning. Keyed off the appended unhide marker text.
+        string unhideMarker = UnhideLinkPrefix + report.TableName;
+        _tableUnhideReports[unhideMarker] = report;
+
         int originalStart = _summaryBox.SelectionStart;
         int originalLength = _summaryBox.SelectionLength;
 
@@ -2068,20 +2183,27 @@ public sealed class MainForm : Form
         if (idx >= 0)
         {
             int insertAt = idx + linkText.Length;
+            string appended = " HIDDEN  " + unhideMarker;
             _summaryBox.Select(insertAt, 0);
             SetSelectionLink(false);
-            _summaryBox.SelectedText = " HIDDEN";
+            _summaryBox.SelectedText = appended;
 
-            // Dim the whole table block (header line through the hide marker) so
-            // it visually recedes without an expensive full re-render.
+            // Dim the whole table block (header line through the appended text)
+            // so it visually recedes without an expensive full re-render.
             string header = "[ ] " + report.TableName;
             int blockStart = _summaryBox.Text.LastIndexOf(header, idx, StringComparison.Ordinal);
             if (blockStart >= 0)
             {
-                int blockEnd = insertAt + " HIDDEN".Length;
+                int blockEnd = insertAt + appended.Length;
                 _summaryBox.Select(blockStart, blockEnd - blockStart);
                 _summaryBox.SelectionColor = DarkTheme.Muted;
             }
+
+            // Mark the appended "[unhide table] <name>" span as a clickable link
+            // so it stands out against the dimmed block and can be undone.
+            int unhideStart = insertAt + " HIDDEN  ".Length;
+            _summaryBox.Select(unhideStart, unhideMarker.Length);
+            SetSelectionLink(true);
         }
 
         _summaryBox.Select(originalStart, originalLength);
@@ -2092,6 +2214,66 @@ public sealed class MainForm : Form
 
         _rescanFlaggedButton.Enabled = _lastResults.Any(r => r.IsFlagged);
         _statusLabel.Text = $"Hid '{report.TableName}' from future scans.";
+    }
+
+    /// <summary>
+    /// Reverses an accidental hide: removes the table from
+    /// <c>hidden_tables.json</c>, restores it to the retained results, and
+    /// re-renders the summary so it surfaces again.
+    /// </summary>
+    private void UnhideTableFromLink(string linkText, TableReport report)
+    {
+        try
+        {
+            _hiddenTables.Remove(report.TableName);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this,
+                $"Failed to update {HiddenTablesStore.FileName}:{Environment.NewLine}{ex.Message}",
+                "VPin Inspector", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return;
+        }
+
+        _tableUnhideReports.Remove(linkText);
+
+        // Restore the table to the retained results/report so it surfaces again.
+        if (!_lastResults.Any(r =>
+                string.Equals(r.FilePath, report.FilePath, StringComparison.OrdinalIgnoreCase)))
+        {
+            _lastResults.Add(report);
+        }
+
+        if (_lastReport is not null &&
+            !_lastReport.Tables.Any(r =>
+                string.Equals(r.FilePath, report.FilePath, StringComparison.OrdinalIgnoreCase)))
+        {
+            var restored = _lastReport.Tables.Append(report).ToList();
+            _lastReport = new ScanReport
+            {
+                InputPath = _lastReport.InputPath,
+                Tables = restored,
+                CollectionFindings = _lastReport.CollectionFindings,
+                SkippedTableCount = _lastReport.SkippedTableCount,
+            };
+        }
+
+        // A full re-render is the simplest way to re-link and re-sort the
+        // restored table back into place. Capture and restore the scroll
+        // position so the view stays put instead of jumping to the bottom.
+        var scroll = new System.Drawing.Point();
+        SendMessage(_summaryBox.Handle, EM_GETSCROLLPOS, IntPtr.Zero, ref scroll);
+
+        if (_lastReport is not null)
+        {
+            RenderSummary(_lastReport);
+        }
+
+        var restore = scroll;
+        BeginInvoke(() => SendMessage(_summaryBox.Handle, EM_SETSCROLLPOS, IntPtr.Zero, ref restore));
+
+        _rescanFlaggedButton.Enabled = _lastResults.Any(r => r.IsFlagged);
+        _statusLabel.Text = $"Restored '{report.TableName}'.";
     }
 
     // --- RichTextBox link support (mark current selection as a hyperlink) ---

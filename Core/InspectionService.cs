@@ -35,6 +35,14 @@ public sealed class ScanOptions
     public int MinTableSizeMB { get; init; }
 
     /// <summary>
+    /// Optional "last modified within" window in days. When greater than zero,
+    /// files whose last-write time is older than this many days are dropped during
+    /// discovery (never parsed), so a scan can focus on recently added/changed
+    /// tables. Zero/absent = no age filter.
+    /// </summary>
+    public int MaxTableAgeDays { get; init; }
+
+    /// <summary>
     /// Maximum number of tables parsed concurrently. Zero or negative = use
     /// <see cref="Environment.ProcessorCount"/>; 1 = single-threaded. The report
     /// order is independent of this value.
@@ -112,6 +120,7 @@ public sealed class InspectionService
                 .Where(f => include is null || include.IsMatch(Path.GetFileName(f)))
                 .Where(f => exclude is null || !exclude.IsMatch(Path.GetFileName(f)))
                 .Where(f => PassesMinSize(f, options.MinTableSizeMB))
+                .Where(f => PassesMaxAge(f, options.MaxTableAgeDays))
                 .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
@@ -154,6 +163,30 @@ public sealed class InspectionService
         try
         {
             return new FileInfo(path).Length >= (long)minMb * 1024 * 1024;
+        }
+        catch
+        {
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// True when the file was last modified within the last <paramref name="maxAgeDays"/>
+    /// days, or when no age filter is set (<paramref name="maxAgeDays"/> &lt;= 0). A file
+    /// whose timestamp can't be read passes, so a transient I/O issue never silently
+    /// hides it.
+    /// </summary>
+    private static bool PassesMaxAge(string path, int maxAgeDays)
+    {
+        if (maxAgeDays <= 0)
+        {
+            return true;
+        }
+
+        try
+        {
+            DateTime cutoff = DateTime.Now.AddDays(-maxAgeDays);
+            return new FileInfo(path).LastWriteTime >= cutoff;
         }
         catch
         {

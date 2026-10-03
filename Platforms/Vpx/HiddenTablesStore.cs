@@ -81,10 +81,38 @@ public sealed class HiddenTablesStore
             return false;
         }
 
+        Save(set);
+        return true;
+    }
+
+    /// <summary>
+    /// Removes <paramref name="fileName"/> (a table file name such as
+    /// "Table.vpx") from the hidden list and persists the change. Returns true
+    /// when the entry was present and removed, false when it was not hidden.
+    /// </summary>
+    public bool Remove(string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            return false;
+        }
+
+        string name = Path.GetFileName(fileName.Trim());
+        var set = new HashSet<string>(Load(), StringComparer.OrdinalIgnoreCase);
+        if (!set.Remove(name))
+        {
+            return false;
+        }
+
+        Save(set);
+        return true;
+    }
+
+    private void Save(IEnumerable<string> names)
+    {
         string json = JsonSerializer.Serialize(
-            set.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToArray(),
+            names.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToArray(),
             SerializerOptions);
         File.WriteAllText(FilePath, json);
-        return true;
     }
 }
