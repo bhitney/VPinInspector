@@ -1,0 +1,45 @@
+name: Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # github.run_number auto-increments on every workflow run.
+      # It is used as the build (third) component of the version: 1.0.<run_number>.0
+      - name: Compute version
+        id: version
+        shell: pwsh
+        run: echo "build_version=1.0.${{ github.run_number }}.0" >> $env:GITHUB_OUTPUT
+
+      - name: Restore
+        run: dotnet restore "VPinInspector.slnx"
+
+      - name: Build
+        run: >
+          dotnet build "VPinInspector.slnx"
+          --configuration Release
+          --no-restore
+          -p:Version=${{ steps.version.outputs.build_version }}
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: VPinInspector-${{ steps.version.outputs.build_version }}
+          path: '**/bin/Release/**'
+          if-no-files-found: error

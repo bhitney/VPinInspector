@@ -1,0 +1,14 @@
+<Project>
+
+  <!--
+	Shared version info for all projects in the solution.
+	- Local builds use the default 0 build number.
+	- CI overrides the version via -p:Version=... (see .github/workflows/build.yml),
+	  where the build number auto-increments from github.run_number.
+  -->
+  <PropertyGroup>
+	<VersionPrefix>1.0.0</VersionPrefix>
+	<Version Condition="'$(Version)' == ''">$(VersionPrefix).0</Version>
+  </PropertyGroup>
+
+</Project>
