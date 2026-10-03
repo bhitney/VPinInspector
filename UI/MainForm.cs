@@ -1622,15 +1622,15 @@ public sealed class MainForm : Form
     /// <summary>Tracks a rule filter toggle and re-renders the retained report.</summary>
     private void OnRuleFilterItemChanged(object? sender, EventArgs e)
     {
-        if (sender is ToolStripMenuItem item)
+        if (sender is ToolStripMenuItem item && item.Text is { } ruleId)
         {
             if (item.Checked)
             {
-                _ruleFilterSelection.Add(item.Text);
+                _ruleFilterSelection.Add(ruleId);
             }
             else
             {
-                _ruleFilterSelection.Remove(item.Text);
+                _ruleFilterSelection.Remove(ruleId);
             }
         }
 
