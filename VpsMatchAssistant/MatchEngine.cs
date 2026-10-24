@@ -29,7 +29,19 @@ public sealed class GameMatch
 
     /// <summary>True when a single high-confidence candidate can be auto-suggested.</summary>
     public bool HasConfidentSuggestion { get; init; }
+
+    /// <summary>Confidence label from the matches file (null when not seeded from a file).</summary>
+    public string? Confidence { get; init; }
+
+    /// <summary>Reason text from the matches file.</summary>
+    public string? Reason { get; init; }
+
+    /// <summary>True when the selection was seeded from the matches file.</summary>
+    public bool FromFile { get; init; }
 }
+
+/// <summary>One pre-computed match loaded from matches.csv.</summary>
+public sealed record FileMatch(string WebGameId, string? Confidence, string? Reason);
 
 /// <summary>
 /// Drives the matching workflow for the companion app, reusing the shared
@@ -66,7 +78,45 @@ public sealed class MatchEngine
     }
 
     /// <summary>
-    /// Free-text search across the entire VPS reference table. Matches (case-
+    /// Loads matches.csv (GameID, MatchedWebGameID, Confidence, Reason) keyed by GameID.
+    /// Rows without a MatchedWebGameID are ignored.
+    /// </summary>
+    public static IReadOnlyDictionary<long, FileMatch> LoadMatchFile(string path)
+    {
+        PupLookupTable table = PupLookupTable.Load(
+            path, new[] { "GameID", "MatchedWebGameID", "Confidence", "Reason" });
+
+        var map = new Dictionary<long, FileMatch>();
+        foreach (PupLookupRow r in table.Rows)
+        {
+            string? web = r.Get("MatchedWebGameID");
+            if (!long.TryParse(r.Get("GameID"), out long id) || string.IsNullOrWhiteSpace(web))
+            {
+                continue;
+            }
+
+            map[id] = new FileMatch(web, r.Get("Confidence"), r.Get("Reason"));
+        }
+
+        return map;
+    }
+
+    private VpsCandidate? FindCandidate(string webGameId, string localName)
+    {
+        PupLookupRow? r = _lookup.Rows.FirstOrDefault(x =>
+            string.Equals(x.Get(PupLookupIndex.WebGameIdColumn), webGameId, StringComparison.OrdinalIgnoreCase));
+        return r is null ? null : new VpsCandidate(
+            WebGameId: webGameId,
+            GameName: r.Get("GameName") ?? string.Empty,
+            Manufacturer: r.Get("Manufact"),
+            Year: r.Get("GameYear"),
+            Version: r.Get("GAMEVER"),
+            Author: r.Get("Author"),
+            Score: PupNameMatcher.Score(localName, r.Get("GameName")));
+    }
+
+    /// <summary>
+    /// Free-text search across
     /// insensitive substring) against GameName, Manufact, GameYear and Author.
     /// All whitespace-separated tokens must be found in at least one field.
     /// </summary>
@@ -135,7 +185,8 @@ public sealed class MatchEngine
     /// to also include games that already have a WEBGameID.
     /// </summary>
     public IReadOnlyList<GameMatch> BuildMatches(
-        PinupDatabase db, int emulatorId, bool visibleOnly, bool includePopulated)
+        PinupDatabase db, int emulatorId, bool visibleOnly, bool includePopulated,
+        IReadOnlyDictionary<long, FileMatch>? fileMatches = null)
     {
         IReadOnlyList<PinupGameIdentityKeyed> games =
             db.GetGameIdentitiesWithKey(new[] { emulatorId });
@@ -181,6 +232,35 @@ public sealed class MatchEngine
                 candidates.Count == 1 && candidates[0].Score >= MatchThreshold ||
                 candidates.Count > 0 && candidates[0].Score >= ConfidentThreshold &&
                     (candidates.Count == 1 || candidates[0].Score - candidates[1].Score >= 0.15);
+
+            if (fileMatches is not null)
+            {
+                // The file is authoritative: no vetting, no auto-suggestion of our own.
+                fileMatches.TryGetValue(keyed.GameKey, out FileMatch? fm);
+                if (fm is not null && !candidates.Any(c =>
+                        string.Equals(c.WebGameId, fm.WebGameId, StringComparison.OrdinalIgnoreCase)))
+                {
+                    VpsCandidate? extra = FindCandidate(fm.WebGameId, game.GameName);
+                    if (extra is not null)
+                    {
+                        candidates.Insert(0, extra);
+                    }
+                }
+
+                results.Add(new GameMatch
+                {
+                    GameKey = keyed.GameKey,
+                    Game = game,
+                    Candidates = candidates,
+                    Kind = match.Kind,
+                    HasConfidentSuggestion = false,
+                    SelectedWebGameId = fm?.WebGameId,
+                    Confidence = fm?.Confidence,
+                    Reason = fm?.Reason,
+                    FromFile = fm is not null,
+                });
+                continue;
+            }
 
             results.Add(new GameMatch
             {

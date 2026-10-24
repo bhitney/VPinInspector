@@ -16,6 +16,7 @@ public sealed class UserSettings
 
     public string? DbPath { get; set; }
     public string? CsvPath { get; set; }
+    public string? MatchesPath { get; set; }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {

@@ -12,6 +12,9 @@ public sealed class MainForm : Form
 
     private readonly TextBox _dbPathBox = new() { Width = 460 };
     private readonly TextBox _csvPathBox = new() { Width = 460 };
+    private readonly TextBox _matchesPathBox = new() { Width = 460 };
+    private readonly Button _matchByFileButton = new() { Text = "Find Matches By File", AutoSize = true, Enabled = false };
+    private bool _lastRunByFile;
     private readonly ComboBox _emulatorCombo = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 260 };
     private readonly CheckBox _visibleOnly = new() { Text = "Visible games only", Checked = true, AutoSize = true };
     private readonly CheckBox _includePopulated = new() { Text = "Include games with WEBGameID", Checked = false, AutoSize = true };
@@ -58,10 +61,28 @@ public sealed class MainForm : Form
             _csvPathBox.Text = _settings.CsvPath!;
         }
 
+        _matchesPathBox.Text = !string.IsNullOrWhiteSpace(_settings.MatchesPath)
+            ? _settings.MatchesPath!
+            : FindDefaultMatchesFile() ?? string.Empty;
+
         BuildLayout();
         WireEvents();
         ApplyDarkTheme();
         ApplyWindowGeometry();
+    }
+
+    private static string? FindDefaultMatchesFile()
+    {
+        for (DirectoryInfo? dir = new(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            string candidate = Path.Combine(dir.FullName, "data", "matches.csv");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     private void ApplyWindowGeometry()
@@ -110,6 +131,7 @@ public sealed class MainForm : Form
 
         _settings.DbPath = _dbPathBox.Text;
         _settings.CsvPath = _csvPathBox.Text;
+        _settings.MatchesPath = _matchesPathBox.Text;
 
         _settings.Save();
     }
@@ -147,6 +169,12 @@ public sealed class MainForm : Form
         csvButtons.Controls.Add(downloadCsv);
         setup.Controls.Add(csvButtons, 2, 1);
 
+        var browseMatches = new Button { Text = "Browse...", AutoSize = true };
+        browseMatches.Click += (_, _) => PickFile(_matchesPathBox, "matches.csv|matches.csv|CSV files|*.csv|All files|*.*");
+        setup.Controls.Add(new Label { Text = "matches.csv:", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 2);
+        setup.Controls.Add(_matchesPathBox, 1, 2);
+        setup.Controls.Add(browseMatches, 2, 2);
+
         var emuRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
         emuRow.Controls.Add(new Label { Text = "Emulator:", AutoSize = true, Anchor = AnchorStyles.Left, Padding = new Padding(0, 6, 4, 0) });
         emuRow.Controls.Add(_emulatorCombo);
@@ -154,8 +182,9 @@ public sealed class MainForm : Form
         emuRow.Controls.Add(_includePopulated);
         emuRow.Controls.Add(_loadEmulatorsButton);
         emuRow.Controls.Add(_matchButton);
+        emuRow.Controls.Add(_matchByFileButton);
         emuRow.Controls.Add(_toggleUncheckedButton);
-        setup.Controls.Add(emuRow, 1, 2);
+        setup.Controls.Add(emuRow, 1, 3);
         setup.SetColumnSpan(emuRow, 2);
 
         root.Controls.Add(setup, 0, 0);
@@ -233,6 +262,7 @@ public sealed class MainForm : Form
         _gamesGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Date Updated", Name = "DateUpdated", Width = 90, ReadOnly = true });
         _gamesGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Date File Updated", Name = "DateFileUpdated", Width = 100, ReadOnly = true });
         _gamesGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Selected WEBGameID", Name = "Selected", Width = 150, ReadOnly = true });
+        _gamesGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Confidence", Name = "Confidence", Width = 80, ReadOnly = true });
         _gamesGrid.Columns.Add(new DataGridViewTextBoxColumn { HeaderText = "Suggestion", Name = "Suggestion", Width = 90, ReadOnly = true });
 
         EnableFillColumns(_gamesGrid);
@@ -322,7 +352,8 @@ public sealed class MainForm : Form
     private void WireEvents()
     {
         _loadEmulatorsButton.Click += (_, _) => LoadEmulators();
-        _matchButton.Click += (_, _) => FindMatches();
+        _matchButton.Click += (_, _) => FindMatches(false);
+        _matchByFileButton.Click += (_, _) => FindMatches(true);
         _applyButton.Click += (_, _) => ApplyChanges();
         _deselectAllButton.Click += (_, _) => DeselectAll();
         _toggleUncheckedButton.Click += (_, _) => ToggleUnchecked();
@@ -336,12 +367,14 @@ public sealed class MainForm : Form
         _candidateSearchClear.Click += (_, _) => _candidateSearchBox.Clear();
         _dbPathBox.Leave += (_, _) => PersistPathSettings();
         _csvPathBox.Leave += (_, _) => PersistPathSettings();
+        _matchesPathBox.Leave += (_, _) => PersistPathSettings();
     }
 
     private void PersistPathSettings()
     {
         _settings.DbPath = _dbPathBox.Text;
         _settings.CsvPath = _csvPathBox.Text;
+        _settings.MatchesPath = _matchesPathBox.Text;
         _settings.Save();
     }
 
@@ -460,7 +493,8 @@ public sealed class MainForm : Form
                 m.Game.DateUpdated ?? string.Empty,
                 m.Game.DateFileUpdated ?? string.Empty,
                 m.SelectedWebGameId ?? string.Empty,
-                m.HasConfidentSuggestion ? "auto" : (m.Candidates.Count > 0 ? "review" : "none"));
+                m.Confidence ?? string.Empty,
+                m.FromFile ? "file" : m.HasConfidentSuggestion ? "auto" : (m.Candidates.Count > 0 ? "review" : "none"));
             _gamesGrid.Rows[index].Tag = m;
         }
 
@@ -474,6 +508,7 @@ public sealed class MainForm : Form
     {
         _emulatorCombo.Items.Clear();
         _matchButton.Enabled = false;
+        _matchByFileButton.Enabled = false;
         try
         {
             using PinupDatabase db = PinupDatabase.Open(_dbPathBox.Text.Trim());
@@ -488,6 +523,7 @@ public sealed class MainForm : Form
             {
                 _emulatorCombo.SelectedIndex = 0;
                 _matchButton.Enabled = true;
+                _matchByFileButton.Enabled = true;
             }
 
             Log($"Loaded {_emulatorCombo.Items.Count} emulator(s).");
@@ -498,8 +534,9 @@ public sealed class MainForm : Form
         }
     }
 
-    private void FindMatches()
+    private void FindMatches(bool byFile)
     {
+        _lastRunByFile = byFile;
         if (_emulatorCombo.SelectedItem is not EmulatorItem emu)
         {
             return;
@@ -513,12 +550,34 @@ public sealed class MainForm : Form
             return;
         }
 
+        IReadOnlyDictionary<long, FileMatch>? fileMatches = null;
+        if (byFile)
+        {
+            string matchesPath = _matchesPathBox.Text.Trim();
+            if (!File.Exists(matchesPath))
+            {
+                MessageBox.Show(this, "matches.csv not found. Browse to it first.",
+                    "Missing matches file", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            try
+            {
+                fileMatches = MatchEngine.LoadMatchFile(matchesPath);
+            }
+            catch (Exception ex)
+            {
+                Error("Failed to read matches file", ex);
+                return;
+            }
+        }
+
         try
         {
             _engine = MatchEngine.Load(csv);
             using PinupDatabase db = PinupDatabase.Open(_dbPathBox.Text.Trim());
             IReadOnlyList<GameMatch> matches =
-                _engine.BuildMatches(db, emu.EmuId, _visibleOnly.Checked, _includePopulated.Checked);
+                _engine.BuildMatches(db, emu.EmuId, _visibleOnly.Checked, _includePopulated.Checked, fileMatches);
 
             _matches.Clear();
             foreach (GameMatch m in matches)
@@ -530,7 +589,16 @@ public sealed class MainForm : Form
             _deselectAllButton.Enabled = matches.Count > 0;
             _toggleUncheckedButton.Enabled = matches.Count > 0;
             int autos = matches.Count(m => m.HasConfidentSuggestion);
-            Log($"Found {matches.Count} game(s); {autos} auto-suggested. Review before applying.");
+            if (byFile)
+            {
+                int seeded = matches.Count(m => m.FromFile);
+                Log($"Found {matches.Count} game(s); {seeded} seeded from matches file. Review before applying.");
+            }
+            else
+            {
+                Log($"Found {matches.Count} game(s); {autos} auto-suggested. Review before applying.");
+            }
+
             UpdateApplyEnabled();
         }
         catch (Exception ex)
@@ -559,10 +627,32 @@ public sealed class MainForm : Form
         if (CurrentMatch is { } match)
         {
             _candidatesGrid.DataSource = new BindingList<VpsCandidate>(match.Candidates.ToList());
+            HighlightSelectedCandidate(match.SelectedWebGameId);
         }
         else
         {
             _candidatesGrid.DataSource = null;
+        }
+    }
+
+    private void HighlightSelectedCandidate(string? webGameId)
+    {
+        if (string.IsNullOrWhiteSpace(webGameId))
+        {
+            return;
+        }
+
+        foreach (DataGridViewRow r in _candidatesGrid.Rows)
+        {
+            if (r.DataBoundItem is VpsCandidate c &&
+                string.Equals(c.WebGameId, webGameId, StringComparison.OrdinalIgnoreCase))
+            {
+                _candidatesGrid.ClearSelection();
+                r.Selected = true;
+                _candidatesGrid.CurrentCell = r.Cells[0];
+                _candidatesGrid.FirstDisplayedScrollingRowIndex = r.Index;
+                return;
+            }
         }
     }
 
@@ -661,7 +751,7 @@ public sealed class MainForm : Form
                 Log($"  {c.GameName}: '{c.OldValue ?? "(empty)"}' -> '{c.NewValue}'");
             }
 
-            FindMatches(); // refresh list (applied games now have a WEBGameID)
+            FindMatches(_lastRunByFile); // refresh list (applied games now have a WEBGameID)
         }
         catch (Exception ex)
         {
@@ -683,7 +773,7 @@ public sealed class MainForm : Form
             Log($"Reverted {applied.Count} change(s).");
             _lastApplied = null;
             _undoButton.Enabled = false;
-            FindMatches();
+            FindMatches(_lastRunByFile);
         }
         catch (Exception ex)
         {
